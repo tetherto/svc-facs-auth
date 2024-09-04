@@ -26,24 +26,6 @@ class AuthFacility extends Base {
     await async.mapSeries(TABLES, async (tbl) => {
       await this._sqlite.execAsync(tbl)
     })
-
-    // if user exists, update row, else insert
-    const users = this.conf.users || []
-    await async.eachSeries(users, async (u) => {
-      const user = await this._sqlite.getAsync(
-        'SELECT * FROM users WHERE email = ? LIMIT 1', u.email
-      )
-
-      if (user) {
-        await this._sqlite.getAsync(
-          'UPDATE users SET caps = ?, write = ? WHERE email = ?', JSON.stringify(u.caps), u.write, u.email
-        )
-      } else {
-        await this._sqlite.getAsync(
-          'INSERT INTO users (email, caps, write) VALUES (?, ?, ?)', u.email, JSON.stringify(u.caps), u.write
-        )
-      }
-    })
   }
 
   addHandlers (handlers) {
@@ -111,7 +93,7 @@ class AuthFacility extends Base {
     }
 
     ips = ips || old.ips
-    userId = old.userId
+    const userId = old.userId
 
     const oldWrite = oldToken.endsWith('-write')
     if (!oldWrite && write) {
