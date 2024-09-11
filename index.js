@@ -5,7 +5,7 @@ const Base = require('bfx-facs-base')
 const TABLES = require('./lib/tables')
 const { dateNowSec, extractIps, isValidIp } = require('./lib/utils')
 const { isNil, isPlainObject, getArrayUniq } = require('@bitfinexcom/lib-js-util-base')
-const uuid = require('uuid')
+const crypto = require('crypto')
 
 class AuthFacility extends Base {
   constructor (caller, opts, ctx) {
@@ -76,7 +76,7 @@ class AuthFacility extends Base {
       strCaps = '-caps:' + caps.join(':')
     }
     const optag = write ? 'write' : 'read'
-    const token = `${pfx}:${scope}:${uuid.v4()}-${userId}${strCaps}-${optag}`
+    const token = `${pfx}:${scope}:${crypto.randomUUID()}-${userId}${strCaps}-${optag}`
 
     await this._sqlite.runAsync(
       'INSERT INTO auth_tokens(token, userId, ips, metadata, created, ttl) VALUES (?, ?, ?, ?, ?, ?)',

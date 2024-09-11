@@ -26,14 +26,13 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@bitfinexcom/lib-js-util-base": "git+https://github.com/bitfinexcom/lib-js-util-base.git",
-    "async": "^3.2.5",
-    "bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git",
-    "uuid": "^9.0.1"
+    "async": "3.2.5",
+    "bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git"
   },
   "devDependencies": {
-    "brittle": "^3.7.0",
-    "sqlite3": "^5.1.7",
-    "standard": "^17.1.0"
+    "brittle": "3.7.0",
+    "sqlite3": "5.1.7",
+    "standard": "17.1.0"
   },
   "repository": {
     "type": "git",
