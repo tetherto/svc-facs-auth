@@ -111,7 +111,7 @@ class AuthFacility extends Base {
     }
 
     ips = ips || old.ips
-    userId = old.userId
+    const userId = old.userId
 
     const oldWrite = oldToken.endsWith('-write')
     if (!oldWrite && write) {
@@ -127,7 +127,7 @@ class AuthFacility extends Base {
       throw new Error('ERR_CAPS_INVALID')
     }
 
-    const newToken = await this.genToken({ ips, userId, ttl, metadata: old.metadata, pfx, scope, caps, write })
+    const newToken = await this.genToken({ ips, userId, ttl: this.conf.ttl || 300, metadata: old.metadata, pfx, scope, caps, write })
     return newToken
   }
 
