@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "lint": "standard",
-    "lint:fix": "standard --fix"
+    "lint:fix": "standard --fix",
+    "test": "brittle tests/**/*.js"
   },
   "author": {
     "name": "prdn",
@@ -18,8 +19,9 @@
     }
   ],
   "keywords": [
-    "auth facs",
-    "facility"
+    "tether",
+    "auth",
+    "facs"
   ],
   "license": "Apache-2.0",
   "dependencies": {
@@ -29,6 +31,8 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "brittle": "^3.7.0",
+    "sqlite3": "^5.1.7",
     "standard": "^17.1.0"
   },
   "repository": {
