@@ -30,9 +30,9 @@
     "bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git"
   },
   "devDependencies": {
-    "brittle": "3.7.0",
-    "sqlite3": "5.1.7",
-    "standard": "17.1.0"
+    "brittle": "^3.7.0",
+    "sqlite3": "^5.1.7",
+    "standard": "^17.1.0"
   },
   "repository": {
     "type": "git",
