@@ -132,10 +132,7 @@ class AuthFacility extends Base {
 
     await this._sqlite.runAsync(
       'INSERT INTO users (email, password, caps, write) VALUES (?, ?, ?, ?)',
-      email,
-      encryptedPassword,
-      JSON.stringify(caps),
-      write
+      [email, encryptedPassword, JSON.stringify(caps), write]
     )
   }
 
