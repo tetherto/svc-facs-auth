@@ -230,6 +230,24 @@ class AuthFacility extends Base {
       return null
     }
 
+    if (type === 'passwordAuth') {
+      const isValidPassword = await bcrypt.compare(info.password, user.password)
+
+      // If password is invalid
+      if (!isValidPassword) {
+        throw new Error('ERR_INVALID_PASSWORD')
+      }
+    }
+
+    if (type === 'passwordAuth') {
+      const isValidPassword = await bcrypt.compare(info.password, user.password)
+
+      // If password is invalid
+      if (!isValidPassword) {
+        throw new Error('ERR_INVALID_PASSWORD')
+      }
+    }
+
     user.write = user.write === 1
     const userId = user.id
 

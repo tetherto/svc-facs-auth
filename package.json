@@ -27,6 +27,7 @@
   "dependencies": {
     "@bitfinexcom/lib-js-util-base": "git+https://github.com/bitfinexcom/lib-js-util-base.git",
     "async": "3.2.5",
+    "bcrypt": "^5.1.1",
     "bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git"
   },
   "devDependencies": {
