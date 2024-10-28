@@ -6,6 +6,8 @@ const TABLES = require('./lib/tables')
 const { dateNowSec, extractIps, isValidIp } = require('./lib/utils')
 const { isNil, isPlainObject, getArrayUniq } = require('@bitfinexcom/lib-js-util-base')
 const crypto = require('crypto')
+const bcrypt = require('bcrypt')
+const saltRounds = 10
 
 class AuthFacility extends Base {
   constructor (caller, opts, ctx) {
@@ -113,7 +115,7 @@ class AuthFacility extends Base {
     return newToken
   }
 
-  async createUser ({ email, caps = [], write = false }) {
+  async createUser ({ email, caps = [], write = false, password = null }) {
     const user = await this._sqlite.getAsync(
       'SELECT * FROM users WHERE email = ? LIMIT 1', email
     )
@@ -122,8 +124,18 @@ class AuthFacility extends Base {
       throw new Error('ERR_USER_EXISTS')
     }
 
+    let encryptedPassword = null
+
+    if (password) {
+      encryptedPassword = await bcrypt.hash(password, saltRounds)
+    }
+
     await this._sqlite.runAsync(
-      'INSERT INTO users (email, caps, write) VALUES (?, ?, ?)', email, JSON.stringify(caps), write
+      'INSERT INTO users (email, password, caps, write) VALUES (?, ?, ?, ?)',
+      email,
+      encryptedPassword,
+      JSON.stringify(caps),
+      write
     )
   }
 
