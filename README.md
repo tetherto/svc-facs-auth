@@ -2,13 +2,46 @@
  
 This is a facility to handel user authentivcaton that extends from `bfx-facs-base` to provide authentication management with support for generating and validating tokens, managing users, and handling permissions. It uses SQLite for storing user and token information and integrates with external HTTP services.
 
-## Config
-This facility does not support configuration files and requires that `lru`, `sqlite`, `httpc` and `httpd` be passed in `opts`.
+## Introduction
+
+### Configuration
+
+This facility requires configuration files. The configuration file should look like this:
+We need to add this configuration file as `config/facs/auth.config.json`:
+
+```json
+{
+  "a0": {
+    "auth_caps": {
+      "m": "miner",
+      "c": "container"
+    },
+    "ttl": 5000
+  }
+}
+```
+
+This facility also requires that `lru`, `sqlite`, `httpc` and `httpd` be passed in `opts`.
+
+## Documentation
 
 
-## API
+### Initialization
 
-### `auth.createUser(req)`
+The facility is initialized in the worker's facilities array (e.g. in cosmicac-app-node) as such:
+
+```javascript
+['fac', 'svc-facs-auth', 'a0', 'a0', () => ({
+    lru: this.lru_15m,
+    sqlite: this.dbSqlite_auth,
+    httpc: this.http_c0,
+    httpd: this.httpd_h0
+}), 10]
+```
+
+### User Auth Operations
+
+#### `auth.createUser(req)`
 Creates a new user with specified capabilities and permissions.
 
 **Parameters:**
@@ -34,7 +67,7 @@ if (result.success) {
 }
 ```
 
-### `auth.genToken(req)`
+#### `auth.genToken(req)`
 Generates a new authentication token based on the provided parameters. It validates the input, allocates resources, and stores the token data.
 
 **Parameters:**
@@ -70,7 +103,7 @@ if (token.success) {
 }
 ```
 
-### `auth.regenerateToken(req)`
+#### `auth.regenerateToken(req)`
 Regenerates an existing authentication token. It validates the old token, checks permissions, and creates a new token.
 
 **Parameters:**
@@ -106,7 +139,7 @@ if (newToken.success) {
 
 
 
-### `auth.getTokenPerms(token, inverse)`
+#### `auth.getTokenPerms(token, inverse)`
 Retrieves permissions associated with a token.
 
 **Parameters:**
@@ -121,7 +154,7 @@ const perms = auth.getTokenPerms('some-token');
 console.log('Token permissions:', perms);
 ```
 
-### `auth.resolveToken(token, ips)`
+#### `auth.resolveToken(token, ips)`
 Validates a token and checks if it is associated with the given IP addresses.
 
 **Parameters:**
@@ -141,7 +174,7 @@ if (result.success) {
 }
 ```
 
-### `auth.tokenHasPerms(token, write, caps, matchAll)`
+#### `auth.tokenHasPerms(token, write, caps, matchAll)`
 Checks if a token has the required permissions.
 
 **Parameters:**
@@ -159,7 +192,7 @@ const hasPerms = auth.tokenHasPerms('some-token', true, ['read'], false);
 console.log('Token has required permissions:', hasPerms);
 ```
 
-### `auth.cleanupTokens()`
+#### `auth.cleanupTokens()`
 Cleans up expired tokens from the database.
 
 **Returns:**
@@ -175,7 +208,7 @@ if (result.success) {
 }
 ```
 
-### `auth.authCallbackHandler(type, req)`
+#### `auth.authCallbackHandler(type, req)`
 Handles authentication callbacks by resolving tokens and returning authentication results.
 
 **Parameters:**
