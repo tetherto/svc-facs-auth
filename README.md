@@ -6,7 +6,7 @@ This is a facility to handle user authentivcaton that extends from `bfx-facs-bas
 
 This facility requires a config file in the following structure:
 
-```json
+```javascript
 {
   "a0": {
     "superAdmin": "superadmin@localhost", // Superadmin email address
