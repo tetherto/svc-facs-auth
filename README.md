@@ -1,73 +1,70 @@
 # svc-facs-auth
  
-This is a facility to handel user authentivcaton that extends from `bfx-facs-base` to provide authentication management with support for generating and validating tokens, managing users, and handling permissions. It uses SQLite for storing user and token information and integrates with external HTTP services.
+This is a facility to handle user authentivcaton that extends from `bfx-facs-base` to provide authentication management with support for generating and validating tokens, managing users, and handling permissions. It uses SQLite for storing user and token information and LRU for caching.
 
-## Introduction
+## Configuration
 
-### Configuration
-
-This facility requires configuration files. The configuration file should look like this:
-We need to add this configuration file as `config/facs/auth.config.json`:
+This facility requires a config file in the following structure:
 
 ```json
 {
   "a0": {
-    "auth_caps": {
-      "m": "miner",
-      "c": "container"
-    },
-    "ttl": 5000
+    "superAdmin": "superadmin@localhost", // Superadmin email address
+    "ttl": 5000, // Default token time-to-live in seconds
+    "saltRounds": 10, // Number of salt rounds for password hashing
+    "roles": { // Roles with associated permissions
+      "admin": [
+        "miner:rw",
+        "container:rw",
+        "user:rw"
+      ],
+      "site_manager": [
+        "miner:rw",
+        "container:rw",
+        "user:r"
+      ],
+      "user": ["jobs:rw"]
+    }
   }
 }
 ```
 
-This facility also requires that `lru`, `sqlite`, `httpc` and `httpd` be passed in `opts`.
-
 ## Documentation
-
-
-### Initialization
-
-The facility is initialized in the worker's facilities array (e.g. in cosmicac-app-node) as such:
-
-```javascript
-['fac', 'svc-facs-auth', 'a0', 'a0', () => ({
-    lru: this.lru_15m,
-    sqlite: this.dbSqlite_auth,
-    httpc: this.http_c0,
-    httpd: this.httpd_h0
-}), 10]
-```
-
-### User Auth Operations
-
-#### `auth.createUser(req)`
-Creates a new user with specified capabilities and permissions.
+### `auth.createUser(req)`
+Creates a new user with specified roles and permissions.
 
 **Parameters:**
 - `req<object>`: Object with user creation details.
     - `email<string>`: Email address of the user.
-    - `caps<string[]>`: Array of capabilities for the user.
-    - `write<boolean>`: Write permission flag for the user (default: false).
-
-**Returns:**
-- `{ success: true }` if the user is created successfully.
-- `{ success: false, message: <error message> }` if an error occurs.
+    - `roles<string[]>`: Array of roles for the user.
+    - `password<string>`: Password for the user.
 
 ```javascript
 const result = await auth.createUser({
   email: 'user@example.com',
-  caps: ['read'],
-  write: true
-});
-if (result.success) {
-  console.log('User created successfully');
-} else {
-  console.error('Failed to create user:', result.message);
-}
+  roles: ['admin']
+})
 ```
 
-#### `auth.genToken(req)`
+### `auth.updateUser(req)`
+Updates an existing user with new roles and permissions.
+
+**Parameters:**
+- `req<object>`: Object with user update details.
+    - `token<string>`: Authentication token for the user.
+    - `email<string>`: Email address of the user.
+    - `roles<string[]>`: Array of roles for the user.
+    - `password<string>`: New password for the user.
+
+```javascript
+const result = await auth.updateUser({
+  token: 'some-token',
+  email: 'new@example.com',
+  roles: ['admin']
+)
+```
+
+### `auth.genToken(req)`
 Generates a new authentication token based on the provided parameters. It validates the input, allocates resources, and stores the token data.
 
 **Parameters:**
@@ -78,12 +75,7 @@ Generates a new authentication token based on the provided parameters. It valida
     - `metadata<object>`: Optional metadata associated with the token.
     - `pfx<string>`: Prefix for the token (default: 'pub').
     - `scope<string>`: Scope for the token (default: 'api').
-    - `caps<string[]>`: Array of capabilities for the token.
-    - `write<boolean>`: Write permission flag for the token (default: false).
-
-**Returns:**
-- `{ success: true, token: <token> }` if the token is generated successfully.
-- `{ success: false, message: <error message> }` if an error occurs.
+    - `roles<string[]>`: Array of roles for the token.
 
 ```javascript
 const token = await auth.genToken({
@@ -93,17 +85,11 @@ const token = await auth.genToken({
   metadata: { key: 'value' },
   pfx: 'pub',
   scope: 'api',
-  caps: ['read'],
-  write: false
-});
-if (token.success) {
-  console.log('Token created successfully:', token.token);
-} else {
-  console.error('Failed to create token:', token.message);
-}
+  roles: ['admin']
+})
 ```
 
-#### `auth.regenerateToken(req)`
+### `auth.regenerateToken(req)`
 Regenerates an existing authentication token. It validates the old token, checks permissions, and creates a new token.
 
 **Parameters:**
@@ -113,12 +99,7 @@ Regenerates an existing authentication token. It validates the old token, checks
     - `ttl<number>`: Time-to-live for the new token in seconds (default: 300).
     - `pfx<string>`: Prefix for the new token (default: 'pub').
     - `scope<string>`: Scope for the new token (default: 'api').
-    - `caps<string[]>`: Array of capabilities for the new token.
-    - `write<boolean>`: Write permission flag for the new token (default: false).
-
-**Returns:**
-- `{ success: true, token: <new token> }` if the token is regenerated successfully.
-- `{ success: false, message: <error message> }` if an error occurs.
+    - `roles<string[]>`: Array of roles for the new token.
 
 ```javascript
 const newToken = await auth.regenerateToken({
@@ -127,103 +108,79 @@ const newToken = await auth.regenerateToken({
   ttl: 3600,
   pfx: 'pub',
   scope: 'api',
-  caps: ['read'],
-  write: false
-});
-if (newToken.success) {
-  console.log('Token regenerated successfully:', newToken.token);
-} else {
-  console.error('Failed to regenerate token:', newToken.message);
-}
+  roles: ['admin']
+})
 ```
 
-
-
-#### `auth.getTokenPerms(token, inverse)`
+### `auth.getTokenPerms(token)`
 Retrieves permissions associated with a token.
 
 **Parameters:**
 - `token<string>`: The token to get permissions for.
-- `inverse<boolean>`: Flag to invert permissions (optional).
 
 **Returns:**
-- `{ write: <boolean>, caps: <string[]> }` with token permissions.
+- `{ superadmin: <boolean>, perms: <string[]> }` with token permissions.
 
 ```javascript
-const perms = auth.getTokenPerms('some-token');
-console.log('Token permissions:', perms);
+const perms = auth.getTokenPerms('some-token')
+console.log('Token permissions:', perms)
 ```
 
-#### `auth.resolveToken(token, ips)`
+### `auth.resolveToken(token, ips)`
 Validates a token and checks if it is associated with the given IP addresses.
 
 **Parameters:**
 - `token<string>`: The token to resolve.
 - `ips<string[]>`: List of IP addresses to validate.
 
-**Returns:**
-- `{ success: true, data: <token data> }` if the token is valid.
-- `{ success: false, message: <error message> }` if the token is invalid or expired.
-
 ```javascript
-const result = await auth.resolveToken('some-token', ['192.168.1.1']);
-if (result.success) {
-  console.log('Token resolved:', result.data);
-} else {
-  console.error('Failed to resolve token:', result.message);
-}
+const token = await auth.resolveToken('some-token', ['192.168.1.1'])
 ```
 
-#### `auth.tokenHasPerms(token, write, caps, matchAll)`
+### `auth.tokenHasPerms(token, perm)`
 Checks if a token has the required permissions.
 
 **Parameters:**
 - `token<string>`: The token to check.
-- `write<boolean>`: Flag to check for write permission.
-- `caps<string[]>`: Array of required capabilities.
-- `matchAll<boolean>`: Flag to match all capabilities (optional).
+- `perm<string>`: Permission to check.
 
 **Returns:**
 - `true` if the token has the required permissions.
 - `false` otherwise.
 
 ```javascript
-const hasPerms = auth.tokenHasPerms('some-token', true, ['read'], false);
-console.log('Token has required permissions:', hasPerms);
+const hasPerms = auth.tokenHasPerms('some-token', 'miner:r')
+console.log('Token has required permissions:', hasPerms)
 ```
 
-#### `auth.cleanupTokens()`
+### `auth.cleanupTokens()`
 Cleans up expired tokens from the database.
 
-**Returns:**
-- `{ success: true }` if the cleanup is successful.
-- `{ success: false, message: <error message> }` if an error occurs.
-
 ```javascript
-const result = await auth.cleanupTokens();
-if (result.success) {
-  console.log('Tokens cleaned up successfully');
-} else {
-  console.error('Failed to clean up tokens:', result.message);
-}
+await auth.cleanupTokens()
 ```
 
-#### `auth.authCallbackHandler(type, req)`
+### `auth.addHandlers(handlers)`
+Adds authentication handlers to the service.
+
+**Parameters:**
+- `handlers<object>`: Object containing authentication handlers, each key is a handler name and value is a handler function.
+
+```javascript
+auth.addHandlers({
+  'handler-name': async (ctx, req) => {
+    // Handler logic
+  }
+})
+```
+
+### `auth.authCallbackHandler(type, req)`
 Handles authentication callbacks by resolving tokens and returning authentication results.
 
 **Parameters:**
 - `type<string>`: Type of authentication callback.
 - `req<object>`: Request object containing callback details.
 
-**Returns:**
-- `{ success: true, token: <token> }` if authentication is successful.
-- `{ success: false, message: <error message> }` if authentication fails.
-
 ```javascript
-const token = await auth.authCallbackHandler('callback-type', request);
-if (token.success) {
-  console.log('Authentication successful:', token.token);
-} else {
-  console.error('Authentication failed:', token.message);
-}
+const token = await auth.authCallbackHandler('callback-type', request)
 ```

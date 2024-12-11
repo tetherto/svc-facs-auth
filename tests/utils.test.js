@@ -1,7 +1,7 @@
 'use strict'
 
 const test = require('brittle')
-const { dateNowSec, extractIps, isValidIp } = require('../../lib/utils')
+const { dateNowSec, extractIps, isValidIp } = require('../lib/utils')
 
 test('utils', async (t) => {
   t.test('dateNowSec', async (t) => {

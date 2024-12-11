@@ -1,11 +1,11 @@
 'use strict'
 
 const test = require('brittle')
-const tables = require('../../lib/tables')
+const tables = require('../lib/tables')
+const newDb = require('./helper/db')
 
 test('tables', async (t) => {
-  const sqlite3 = require('sqlite3').verbose()
-  const db = new sqlite3.Database(':memory:')
+  const { db, close } = newDb()
 
   let autoInc = 0
 
@@ -30,4 +30,6 @@ test('tables', async (t) => {
       resolve()
     })
   })
+
+  close()
 })

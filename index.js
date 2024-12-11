@@ -4,10 +4,9 @@ const async = require('async')
 const Base = require('bfx-facs-base')
 const TABLES = require('./lib/tables')
 const { dateNowSec, extractIps, isValidIp } = require('./lib/utils')
-const { isNil, isPlainObject, getArrayUniq } = require('@bitfinexcom/lib-js-util-base')
+const { isNil, isPlainObject, getArrayUniq, union } = require('@bitfinexcom/lib-js-util-base')
 const crypto = require('crypto')
 const bcrypt = require('bcrypt')
-const saltRounds = 10
 
 class AuthFacility extends Base {
   constructor (caller, opts, ctx) {
@@ -16,25 +15,41 @@ class AuthFacility extends Base {
     this.name = 'auth'
     this._lru = opts.lru
     this._sqlite = opts.sqlite
-    this._httpc = opts.httpc
-    this._httpd = opts.httpd
 
     this._authHandlers = {}
     this._hasConf = true
   }
 
+  // test added
   async _initDb () {
-    this.init()
+    super.init()
+
     await async.mapSeries(TABLES, async (tbl) => {
       await this._sqlite.execAsync(tbl)
     })
+
+    const admin = this.conf.superAdmin
+    if (!admin) {
+      throw new Error('ERR_SUPER_ADMIN_MISSING')
+    }
+
+    const user = await this._sqlite.getAsync('SELECT * FROM users WHERE id = 1 LIMIT 1')
+    if (!user) {
+      await this._sqlite.runAsync(
+        'INSERT INTO users (email, roles) VALUES (?, ?)', [admin, JSON.stringify(['*'])]
+      )
+    } else if (user.email !== admin) {
+      await this._sqlite.runAsync(
+        'UPDATE users SET email = ? WHERE id = 1', [admin]
+      )
+    }
   }
 
   addHandlers (handlers) {
     Object.assign(this._authHandlers, handlers)
   }
 
-  _validateTokenOpts ({ ips, userId, ttl, metadata, pfx, scope, caps, write }) {
+  _validateTokenOpts ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
     if (!Array.isArray(ips) || !ips.length || !ips.every(ip => isValidIp(ip))) {
       throw new Error('ERR_IPS_INVALID')
     }
@@ -59,26 +74,21 @@ class AuthFacility extends Base {
       throw new Error('ERR_SCOPE_INVALID')
     }
 
-    if (!Array.isArray(caps) || !caps.every(c => typeof c === 'string')) {
-      throw new Error('ERR_CAPS_INVALID')
-    }
-
-    if (typeof write !== 'boolean') {
-      throw new Error('ERR_WRITE_INVALID')
+    if (!Array.isArray(roles) || !roles.every(c => typeof c === 'string')) {
+      throw new Error('ERR_ROLES_INVALID')
     }
   }
 
-  async genToken ({ ips, userId, ttl = 300, metadata = {}, pfx = 'pub', scope = 'api', caps = [], write = false }) {
+  async genToken ({ ips, userId, ttl = this.conf.ttl || 300, metadata = {}, pfx = 'pub', scope = 'api', roles = [] }) {
     const now = dateNowSec()
 
-    this._validateTokenOpts({ ips, userId, ttl, metadata, pfx, scope, caps, write })
+    this._validateTokenOpts({ ips, userId, ttl, metadata, pfx, scope, roles })
 
-    let strCaps = ''
-    if (caps.length) {
-      strCaps = '-caps:' + caps.join(':')
+    let strRoles = ''
+    if (roles.length) {
+      strRoles = '-roles:' + roles.join(':')
     }
-    const optag = write ? 'write' : 'read'
-    const token = `${pfx}:${scope}:${crypto.randomUUID()}-${userId}${strCaps}-${optag}`
+    const token = `${pfx}:${scope}:${crypto.randomUUID()}-${userId}${strRoles}`
 
     await this._sqlite.runAsync(
       'INSERT INTO auth_tokens(token, userId, ips, metadata, created, ttl) VALUES (?, ?, ?, ?, ?, ?)',
@@ -88,7 +98,7 @@ class AuthFacility extends Base {
     return token
   }
 
-  async regenerateToken ({ oldToken, ips = null, ttl = 300, pfx = 'pub', scope = 'api', caps = [], write = false }) {
+  async regenerateToken ({ oldToken, ips = null, pfx = 'pub', scope = 'api', roles = [] }) {
     const old = await this._getTokenFromDb(oldToken)
     if (!old) {
       throw new Error('ERR_OLD_TOKEN_INVALID')
@@ -97,25 +107,20 @@ class AuthFacility extends Base {
     ips = ips || old.ips
     const userId = old.userId
 
-    const oldWrite = oldToken.endsWith('-write')
-    if (!oldWrite && write) {
-      throw new Error('ERR_WRITE_PERM_DENIED')
+    const oldRoles = []
+    const rolesMatch = oldToken.match(/(roles:[a-z:]*)/)
+    if (rolesMatch && rolesMatch[1]) {
+      oldRoles.push(...(rolesMatch[1].replace('roles:', '').split(':')))
+    }
+    if (!roles.every(c => oldRoles.includes(c))) {
+      throw new Error('ERR_ROLES_INVALID')
     }
 
-    const oldCaps = []
-    const capsMatch = oldToken.match(/(caps:[a-z:]*)/)
-    if (capsMatch && capsMatch[1]) {
-      oldCaps.push(...(capsMatch[1].replace('caps:', '').split(':')))
-    }
-    if (!caps.every(c => oldCaps.includes(c))) {
-      throw new Error('ERR_CAPS_INVALID')
-    }
-
-    const newToken = await this.genToken({ ips, userId, ttl: this.conf.ttl || 300, metadata: old.metadata, pfx, scope, caps, write })
+    const newToken = await this.genToken({ ips, userId, ttl: this.conf.ttl || 300, metadata: old.metadata, pfx, scope, roles })
     return newToken
   }
 
-  async createUser ({ email, caps = [], write = false, password = null }) {
+  async createUser ({ email, roles = [], password = null }) {
     const user = await this._sqlite.getAsync(
       'SELECT * FROM users WHERE email = ? LIMIT 1', email
     )
@@ -123,32 +128,72 @@ class AuthFacility extends Base {
     if (user) {
       throw new Error('ERR_USER_EXISTS')
     }
-
-    let encryptedPassword = null
-
-    if (password) {
-      encryptedPassword = await bcrypt.hash(password, saltRounds)
+    
+    if (!email) {
+      throw new Error('ERR_MISSING_EMAIL')
     }
 
+    if (!Array.isArray(roles) || !roles.length) {
+      throw new Error('ERR_MISSING_ROLES')
+    }
+
+    password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
+
     await this._sqlite.runAsync(
-      'INSERT INTO users (email, password, caps, write) VALUES (?, ?, ?, ?)',
-      [email, encryptedPassword, JSON.stringify(caps), write]
+      'INSERT INTO users (email, roles, password) VALUES (?, ?, ?)', [email, JSON.stringify(roles), password]
     )
   }
 
-  getTokenPerms (token, inverse = false) {
-    const write = token.endsWith('-write')
-    let caps = token.substring(token.indexOf('-caps:'))
-      .replace('-caps', '')
-      .replace(write ? '-write' : '-read', '')
-      .split(':')
-      .filter(Boolean)
-
-    if (inverse) {
-      caps = caps.map(c => this.conf.auth_caps[c])
+  async updateUser ({ token, email, roles = [], password = null }) {
+    let user = await this._getTokenFromDb(token)
+    const userId = user?.userId
+    if (!userId) {
+      throw new Error('ERR_TOKEN_INVALID')
     }
 
-    return { write, caps }
+    user = await this._sqlite.getAsync(
+      'SELECT * FROM users WHERE id = ? LIMIT 1', userId
+    )
+    if (!user) {
+      throw new Error('ERR_USER_NOT_FOUND')
+    }
+
+    await this._sqlite.runAsync(
+      'UPDATE users SET email = ?, roles = ?, password = ? WHERE id = ?', [email, JSON.stringify(roles), password, userId]
+    )
+  }
+
+  _mergePerms (arr) {
+    if (!Array.isArray(arr) || !arr.length) {
+      return
+    }
+
+    const perms = arr.reduce((acc, perm) => {
+      const [key, val] = perm.split(':')
+      acc[key] = new Set([...(acc[key] ?? ''), ...val])
+      return acc
+    }, {})
+
+    return Object.entries(perms).map(([key, val]) => `${key}:${[...val].sort().join('')}`)
+  }
+
+  getTokenPerms (token) {
+    let roles = token.substring(token.indexOf('-roles:'))
+      .replace('-roles', '')
+      .split(':')
+      .filter(Boolean)
+    
+    roles = roles.map(c => {
+      if (c === '*') {
+        return '*'
+      }
+      return this.conf.roles[c]
+    })
+
+    return {
+      superadmin: roles.includes('*'),
+      perms: this._mergePerms(union(...roles))
+    }
   }
 
   async resolveToken (token, ips) {
@@ -160,15 +205,16 @@ class AuthFacility extends Base {
     return res
   }
 
-  tokenHasPerms (token, write, caps, matchAll = false) {
-    const perms = this.getTokenPerms(token)
-    if (write && !perms.write) {
-      return false
+  tokenHasPerms (token, perm) {
+    const { superadmin, perms } = this.getTokenPerms(token)
+
+    if (superadmin) {
+      return true
     }
 
-    return matchAll
-      ? perms.caps.every(c => caps.includes(c))
-      : perms.caps.some(c => caps.includes(c))
+    const [key, required] = perm.split(':')
+    const av = perms.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
+    return [...required].every(c => av.includes(c))
   }
 
   async _getTokenFromDb (token) {
@@ -230,39 +276,23 @@ class AuthFacility extends Base {
       return null
     }
 
-    if (type === 'passwordAuth') {
-      const isValidPassword = await bcrypt.compare(info.password, user.password)
-
-      // If password is invalid
-      if (!isValidPassword) {
-        throw new Error('ERR_INVALID_PASSWORD')
-      }
+    // check if password matches
+    if (info.password && user.password && await bcrypt.compare(info.password, user.password)) {
+      return null
     }
 
-    if (type === 'passwordAuth') {
-      const isValidPassword = await bcrypt.compare(info.password, user.password)
-
-      // If password is invalid
-      if (!isValidPassword) {
-        throw new Error('ERR_INVALID_PASSWORD')
-      }
-    }
-
-    user.write = user.write === 1
     const userId = user.id
 
+    if (info.password) delete info.password
     const metadata = { ...info, ...user }
     const ips = extractIps(req)
 
-    const caps = []
-    if (metadata.caps?.length) {
-      caps.push(...JSON.parse(metadata.caps))
-    }
-    if (!metadata.write && !caps.length) {
-      caps.push(...Object.keys(this.conf.auth_caps))
+    const roles = []
+    if (metadata.roles?.length) {
+      roles.push(...JSON.parse(metadata.roles))
     }
 
-    const token = await this.genToken({ ips, userId, ttl: this.conf.ttl, metadata, write: metadata.write, caps })
+    const token = await this.genToken({ ips, userId, ttl: this.conf.ttl, metadata, roles })
     return token
   }
 
