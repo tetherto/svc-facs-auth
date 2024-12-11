@@ -17,7 +17,7 @@ const authFac = new Fac(caller, {
 
 test('init', async (t) => {
   // init the database
-  await new Promise((res, _rej) => authFac.start(res))
+  await new Promise((resolve, _reject) => authFac.start(resolve))
 
   // check if users table is created
   const usersTable = await authFac._sqlite.getAsync(
@@ -82,7 +82,7 @@ test('createUser', async (t) => {
 
 test('createToken', async (t) => {
   // create a token with correct email and password
-  const token = await authFac.genToken({ 
+  const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user']
@@ -95,7 +95,7 @@ test('createToken', async (t) => {
 
 test('regenerateToken', async (t) => {
   // create a token with correct email and password
-  const oldToken = await authFac.genToken({ 
+  const oldToken = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user']
@@ -125,7 +125,7 @@ test('regenerateToken', async (t) => {
 
 test('tokenPerms', async (t) => {
   // create a token with correct email and password
-  const token = await authFac.genToken({ 
+  const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user']
@@ -137,7 +137,7 @@ test('tokenPerms', async (t) => {
   t.not(authFac.tokenHasPerms(token, 'miner:r'), true, 'token does not have miner:r')
 
   // check if superadmin token has all permissions
-  const superAdminToken = await authFac.genToken({ 
+  const superAdminToken = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 1,
     roles: ['*']
@@ -149,7 +149,7 @@ test('tokenPerms', async (t) => {
 
 test('updateUser', async (t) => {
   // create a token with correct email and password
-  const token = await authFac.genToken({ 
+  const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user']
@@ -203,7 +203,7 @@ test('authHandlers', async (t) => {
 
   // create a token with incorrect email and password
   try {
-    const rep = await authFac.authCallbackHandler('password', { email: 'test100@localhost', password: 'incorrect', ip: '127.0.0.1' })
+    await authFac.authCallbackHandler('password', { email: 'test100@localhost', password: 'incorrect', ip: '127.0.0.1' })
   } catch (e) {
     t.is(e.message, 'ERR_AUTH_FAIL', 'throw error on incorrect email and password')
   }
@@ -211,7 +211,7 @@ test('authHandlers', async (t) => {
 
 test('cleanupTokens', async (t) => {
   // create a token with correct email and password
-  const token = await authFac.genToken({ 
+  const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user'],

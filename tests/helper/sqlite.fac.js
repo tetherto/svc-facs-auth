@@ -1,7 +1,7 @@
 'use strict'
 
-const newDb = require("./db")
-const { promisify } = require("util")
+const newDb = require('./db')
+const { promisify } = require('util')
 
 module.exports = () => {
   const { db, stop } = newDb()

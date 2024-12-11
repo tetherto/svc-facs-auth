@@ -128,7 +128,7 @@ class AuthFacility extends Base {
     if (user) {
       throw new Error('ERR_USER_EXISTS')
     }
-    
+
     if (!email) {
       throw new Error('ERR_MISSING_EMAIL')
     }
@@ -182,7 +182,7 @@ class AuthFacility extends Base {
       .replace('-roles', '')
       .split(':')
       .filter(Boolean)
-    
+
     roles = roles.map(c => {
       if (c === '*') {
         return '*'
