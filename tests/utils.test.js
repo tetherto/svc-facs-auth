@@ -5,12 +5,10 @@ const { dateNowSec, extractIps, isValidIp } = require('../lib/utils')
 
 test('utils', async (t) => {
   t.test('dateNowSec', async (t) => {
-    const now = Date.now()
-    const nowSec = Math.floor(now / 1000)
-
+    const now = Math.floor(Date.now() / 1000)
     const resp = dateNowSec()
 
-    t.is(resp, nowSec, 'returns current time in seconds')
+    t.is(resp, now, 'returns current time in seconds')
     t.is(typeof resp, 'number', 'returns a Number')
   })
 

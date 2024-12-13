@@ -158,6 +158,8 @@ class AuthFacility extends Base {
       throw new Error('ERR_USER_NOT_FOUND')
     }
 
+    password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
+
     await this._sqlite.runAsync(
       'UPDATE users SET email = ?, roles = ?, password = ? WHERE id = ?', [email, JSON.stringify(roles), password, userId]
     )
@@ -277,7 +279,7 @@ class AuthFacility extends Base {
     }
 
     // check if password matches
-    if (info.password && user.password && await bcrypt.compare(info.password, user.password)) {
+    if (info.password && user.password && !await bcrypt.compare(info.password, user.password)) {
       return null
     }
 

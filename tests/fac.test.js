@@ -2,6 +2,7 @@
 
 const test = require('brittle')
 const { promiseSleep } = require('@bitfinex/lib-js-util-promise')
+const { omit } = require('@bitfinexcom/lib-js-util-base')
 
 const Fac = require('..')
 const caller = { ctx: { root: __dirname } }
@@ -59,25 +60,25 @@ test('createUser', async (t) => {
   }, 'valid user created')
 
   // create a user with missing email
-  try {
-    await authFac.createUser({ roles: ['user'] })
-  } catch (e) {
-    t.is(e.message, 'ERR_MISSING_EMAIL', 'throw error on missing email')
-  }
+  await t.exception(
+    async () => await authFac.createUser({ roles: ['user'] }),
+    /ERR_MISSING_EMAIL/,
+    'throw error on missing email'
+  )
 
   // create a user with missing roles
-  try {
-    await authFac.createUser({ email: 'test2@localhost' })
-  } catch (e) {
-    t.is(e.message, 'ERR_MISSING_ROLES', 'throw error on missing roles')
-  }
+  await t.exception(
+    async () => await authFac.createUser({ email: 'test2@localhost' }),
+    /ERR_MISSING_ROLES/,
+    'throw error on missing roles'
+  )
 
   // create a user with existing email
-  try {
-    await authFac.createUser({ email: 'test1@localhost', roles: ['user'] })
-  } catch (e) {
-    t.is(e.message, 'ERR_USER_EXISTS', 'throw error on existing email')
-  }
+  await t.exception(
+    async () => await authFac.createUser({ email: 'test1@localhost', roles: ['user'] }),
+    /ERR_USER_EXISTS/,
+    'throw error on existing email'
+  )
 })
 
 test('createToken', async (t) => {
@@ -109,18 +110,18 @@ test('regenerateToken', async (t) => {
   t.is(newToken.match(/pub:api:[a-z0-9-]*-2-roles:user/)[0], newToken, 'valid token regenerated')
 
   // regenerate token with incorrect old token
-  try {
-    await authFac.regenerateToken({ oldToken: 'incorrect' })
-  } catch (e) {
-    t.is(e.message, 'ERR_OLD_TOKEN_INVALID', 'throw error on incorrect old token')
-  }
+  await t.exception(
+    async () => await authFac.regenerateToken({ oldToken: 'incorrect' }),
+    /ERR_OLD_TOKEN_INVALID/,
+    'throw error on incorrect old token'
+  )
 
   // regenerate token with incorrect roles
-  try {
-    await authFac.regenerateToken({ oldToken, roles: ['admin'] })
-  } catch (e) {
-    t.is(e.message, 'ERR_ROLES_INVALID', 'throw error on incorrect roles')
-  }
+  await t.exception(
+    async () => await authFac.regenerateToken({ oldToken, roles: ['admin'] }),
+    /ERR_ROLES_INVALID/,
+    'throw error on incorrect roles'
+  )
 })
 
 test('tokenPerms', async (t) => {
@@ -156,17 +157,17 @@ test('updateUser', async (t) => {
   })
 
   // update user with new email and password
+  // NOTE: password is hashed before storing
   await authFac.updateUser({ token, email: 'test3@localhost', roles: ['user'], password: 'newpassword' })
 
   const user = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test3@localhost'
   )
 
-  t.alike(user, {
+  t.alike(omit(user, ['password']), {
     id: 2,
     email: 'test3@localhost',
-    roles: JSON.stringify(['user']),
-    password: 'newpassword'
+    roles: JSON.stringify(['user'])
   }, 'user updated correctly')
 })
 
@@ -194,6 +195,13 @@ test('authHandlers', async (t) => {
   // match all except uuid with regex
   t.is(token.match(/pub:api:[a-z0-9-]*-2-roles:user/)[0], token, 'valid token created with password auth handler')
 
+  // throw error in wrong password
+  await t.exception(
+    async () => await authFac.authCallbackHandler('password', { email: 'test3@localhost', password: 'incorrect', ip: '127.0.0.1' }),
+    /ERR_AUTH_FAIL/,
+    'throw error on incorrect password'
+  )
+
   // create a valid token with non-password auth handler
   const token2 = await authFac.authCallbackHandler('nonPassword', { email: 'test3@localhost', ip: '127.0.0.1' })
 
@@ -202,11 +210,11 @@ test('authHandlers', async (t) => {
   t.is(token2.match(/pub:api:[a-z0-9-]*-2-roles:user/)[0], token2, 'valid token created with non-password auth handler')
 
   // create a token with incorrect email and password
-  try {
-    await authFac.authCallbackHandler('password', { email: 'test100@localhost', password: 'incorrect', ip: '127.0.0.1' })
-  } catch (e) {
-    t.is(e.message, 'ERR_AUTH_FAIL', 'throw error on incorrect email and password')
-  }
+  await t.exception(
+    async () => await authFac.authCallbackHandler('password', { email: 'test100@localhost', password: 'incorrect', ip: '127.0.0.1' }),
+    /ERR_AUTH_FAIL/,
+    'throw error on incorrect email and password'
+  )
 })
 
 test('cleanupTokens', async (t) => {
