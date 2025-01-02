@@ -9,7 +9,10 @@ This facility requires a config file in the following structure:
 ```javascript
 {
   "a0": {
-    "superAdmin": "superadmin@localhost", // Superadmin email address
+    "superAdmin": {
+      "name": "Super Admin",
+      "email": "superadmin@localhost"
+    },
     "ttl": 5000, // Default token time-to-live in seconds
     "saltRounds": 10, // Number of salt rounds for password hashing
     "roles": { // Roles with associated permissions
@@ -31,37 +34,47 @@ This facility requires a config file in the following structure:
 
 ## Documentation
 ### `auth.createUser(req)`
-Creates a new user with specified roles and permissions.
+Creates a new user with specified roles, permissions, name, and optional profile picture.
 
 **Parameters:**
 - `req<object>`: Object with user creation details.
-    - `email<string>`: Email address of the user.
-    - `roles<string[]>`: Array of roles for the user.
-    - `password<string>`: Password for the user.
+  - `email<string>`: Email address of the user.
+  - `roles<string[]>`: Array of roles for the user.
+  - `password<string>`: Password for the user.
+  - `name<string>`: Full name of the user.
+  - `profilePicture<string>`: URL for the user's profile picture.
 
 ```javascript
 const result = await auth.createUser({
   email: 'user@example.com',
-  roles: ['admin']
-})
+  roles: ['admin'],
+  password: 'securepassword',
+  name: 'Example User',
+  profilePicture: 'https://example.com/profile.jpg'
+});
 ```
 
 ### `auth.updateUser(req)`
-Updates an existing user with new roles and permissions.
+Updates an existing user with new details such as roles, permissions, name, and profile picture.
 
 **Parameters:**
 - `req<object>`: Object with user update details.
     - `token<string>`: Authentication token for the user.
-    - `email<string>`: Email address of the user.
+    - `email<string>`: New email address of the user.
     - `roles<string[]>`: Array of roles for the user.
     - `password<string>`: New password for the user.
+    - `name<string>`: New name of the user.
+    - `profilePicture<string>`: URL for the new profile picture.
 
+**Example Usage:**
 ```javascript
 const result = await auth.updateUser({
   token: 'some-token',
   email: 'new@example.com',
-  roles: ['admin']
-)
+  roles: ['admin'],
+  name: 'New Name',
+  profilePicture: 'https://example.com/new-picture.jpg'
+});
 ```
 
 ### `auth.genToken(req)`

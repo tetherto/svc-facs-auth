@@ -40,13 +40,20 @@ test('init', async (t) => {
     id: 1,
     email: 'superadmin@localhost',
     roles: JSON.stringify(['*']),
-    password: null
+    password: null,
+    name: 'Super Admin',
+    profile_picture: null
   }, 'superAdmin created')
 })
 
 test('createUser', async (t) => {
-  // create a user with correct email, roles as array of strings
-  await authFac.createUser({ email: 'test1@localhost', roles: ['user'] })
+  // Create a user with correct email, roles, name, and profile picture
+  await authFac.createUser({
+    email: 'test1@localhost',
+    roles: ['user'],
+    name: 'Test User',
+    profilePicture: 'https://example.com/profile.jpg'
+  })
 
   const user = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test1@localhost'
@@ -56,26 +63,35 @@ test('createUser', async (t) => {
     id: 2,
     email: 'test1@localhost',
     roles: JSON.stringify(['user']),
-    password: null
+    password: null,
+    name: 'Test User',
+    profile_picture: 'https://example.com/profile.jpg'
   }, 'valid user created')
 
-  // create a user with missing email
+  // Create a user with missing email
   await t.exception(
-    async () => await authFac.createUser({ roles: ['user'] }),
+    async () => await authFac.createUser({ roles: ['user'], name: 'Test User' }),
     /ERR_MISSING_EMAIL/,
     'throw error on missing email'
   )
 
-  // create a user with missing roles
+  // Create a user with missing roles
   await t.exception(
-    async () => await authFac.createUser({ email: 'test2@localhost' }),
+    async () => await authFac.createUser({ email: 'test2@localhost', name: 'Test User' }),
     /ERR_MISSING_ROLES/,
     'throw error on missing roles'
   )
 
-  // create a user with existing email
+  // Create a user with missing name
   await t.exception(
-    async () => await authFac.createUser({ email: 'test1@localhost', roles: ['user'] }),
+    async () => await authFac.createUser({ email: 'test3@localhost', roles: ['user'] }),
+    /ERR_MISSING_NAME/,
+    'throw error on missing name'
+  )
+
+  // Create a user with existing email
+  await t.exception(
+    async () => await authFac.createUser({ email: 'test1@localhost', roles: ['user'], name: 'Test User' }),
     /ERR_USER_EXISTS/,
     'throw error on existing email'
   )
@@ -149,16 +165,23 @@ test('tokenPerms', async (t) => {
 })
 
 test('updateUser', async (t) => {
-  // create a token with correct email and password
+  // Create a token with correct email and password
   const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user']
   })
 
-  // update user with new email and password
+  // Update user with new email, password, name, and profile picture
   // NOTE: password is hashed before storing
-  await authFac.updateUser({ token, email: 'test3@localhost', roles: ['user'], password: 'newpassword' })
+  await authFac.updateUser({
+    token,
+    email: 'test3@localhost',
+    roles: ['user'],
+    password: 'newpassword',
+    name: 'Updated User', // Update name
+    profilePicture: 'https://example.com/updated-profile.jpg' // Update profile picture
+  })
 
   const user = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test3@localhost'
@@ -167,7 +190,9 @@ test('updateUser', async (t) => {
   t.alike(omit(user, ['password']), {
     id: 2,
     email: 'test3@localhost',
-    roles: JSON.stringify(['user'])
+    roles: JSON.stringify(['user']),
+    name: 'Updated User', // Validate updated name
+    profile_picture: 'https://example.com/updated-profile.jpg' // Validate updated profile picture
   }, 'user updated correctly')
 })
 

@@ -1,7 +1,11 @@
 {
   "a0": {
-    "ttl": 3000,
-    "superAdmin": "superadmin@localhost",
+    "superAdmin": {
+      "name": "Super Admin",
+      "email": "superadmin@localhost"
+    },
+    "ttl": 5000,
+    "saltRounds": 10,
     "roles": {
       "admin": [
         "miner:rw",

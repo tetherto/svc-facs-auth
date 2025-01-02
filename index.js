@@ -29,19 +29,23 @@ class AuthFacility extends Base {
     })
 
     const admin = this.conf.superAdmin
-    if (!admin) {
+    if (!admin || !admin.email || !admin.name) {
       throw new Error('ERR_SUPER_ADMIN_MISSING')
     }
 
     const user = await this._sqlite.getAsync('SELECT * FROM users WHERE id = 1 LIMIT 1')
     if (!user) {
       await this._sqlite.runAsync(
-        'INSERT INTO users (email, roles) VALUES (?, ?)', [admin, JSON.stringify(['*'])]
+        'INSERT INTO users (name, email, roles) VALUES (?, ?, ?)',
+        [admin.name, admin.email, JSON.stringify(['*'])]
       )
-    } else if (user.email !== admin) {
-      await this._sqlite.runAsync(
-        'UPDATE users SET email = ? WHERE id = 1', [admin]
-      )
+    } else {
+      if (user.email !== admin.email || user.name !== admin.name) {
+        await this._sqlite.runAsync(
+          'UPDATE users SET name = ?, email = ? WHERE id = 1',
+          [admin.name, admin.email]
+        )
+      }
     }
   }
 
@@ -120,7 +124,7 @@ class AuthFacility extends Base {
     return newToken
   }
 
-  async createUser ({ email, roles = [], password = null }) {
+  async createUser ({ email, roles = [], password = null, name = null, profilePicture = null }) {
     const user = await this._sqlite.getAsync(
       'SELECT * FROM users WHERE email = ? LIMIT 1', email
     )
@@ -133,6 +137,10 @@ class AuthFacility extends Base {
       throw new Error('ERR_MISSING_EMAIL')
     }
 
+    if (!name) {
+      throw new Error('ERR_MISSING_NAME')
+    }
+
     if (!Array.isArray(roles) || !roles.length) {
       throw new Error('ERR_MISSING_ROLES')
     }
@@ -140,11 +148,12 @@ class AuthFacility extends Base {
     password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
 
     await this._sqlite.runAsync(
-      'INSERT INTO users (email, roles, password) VALUES (?, ?, ?)', [email, JSON.stringify(roles), password]
+      'INSERT INTO users (email, roles, password, name, profile_picture) VALUES (?, ?, ?, ?, ?)',
+      [email, JSON.stringify(roles), password, name, profilePicture]
     )
   }
 
-  async updateUser ({ token, email, roles = [], password = null }) {
+  async updateUser ({ token, email, roles = [], password = null, name = null, profilePicture = null }) {
     let user = await this._getTokenFromDb(token)
     const userId = user?.userId
     if (!userId) {
@@ -160,9 +169,39 @@ class AuthFacility extends Base {
 
     password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
 
-    await this._sqlite.runAsync(
-      'UPDATE users SET email = ?, roles = ?, password = ? WHERE id = ?', [email, JSON.stringify(roles), password, userId]
-    )
+    const updates = []
+    const params = []
+
+    if (email) {
+      updates.push('email = ?')
+      params.push(email)
+    }
+    if (roles.length > 0) {
+      updates.push('roles = ?')
+      params.push(JSON.stringify(roles))
+    }
+    if (password) {
+      updates.push('password = ?')
+      params.push(password)
+    }
+    if (name) {
+      updates.push('name = ?')
+      params.push(name)
+    }
+    if (profilePicture) {
+      updates.push('profile_picture = ?')
+      params.push(profilePicture)
+    }
+
+    if (updates.length === 0) {
+      throw new Error('ERR_NO_UPDATE_FIELDS')
+    }
+
+    // Add userId to the parameters and run the query
+    params.push(userId)
+    const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`
+
+    await this._sqlite.runAsync(query, params)
   }
 
   _mergePerms (arr) {
