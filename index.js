@@ -18,12 +18,12 @@ class AuthFacility extends Base {
 
     this._authHandlers = {}
     this._hasConf = true
+
+    super.init()
   }
 
   // test added
   async _initDb () {
-    super.init()
-
     await async.mapSeries(TABLES, async (tbl) => {
       await this._sqlite.execAsync(tbl)
     })
