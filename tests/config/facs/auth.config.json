@@ -1,0 +1,19 @@
+{
+  "a0": {
+    "ttl": 3000,
+    "superAdmin": "superadmin@localhost",
+    "roles": {
+      "admin": [
+        "miner:rw",
+        "container:rw",
+        "user:rw"
+      ],
+      "site_manager": [
+        "miner:rw",
+        "container:rw",
+        "user:r"
+      ],
+      "user": ["jobs:rw"]
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "svc-facs-auth",
+  "version": "0.1.0",
+  "description": "A facility that handles local authentication using sqlite db",
+  "main": "index.js",
+  "scripts": {
+    "lint": "standard",
+    "lint:fix": "standard --fix",
+    "test": "brittle tests/*.test.js"
+  },
+  "author": {
+    "name": "prdn",
+    "email": "paolo@bitfinex.com"
+  },
+  "maintainers": [
+    {
+      "name": "prdn",
+      "email": "paolo@bitfinex.com"
+    }
+  ],
+  "keywords": [
+    "tether",
+    "auth",
+    "facs"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@bitfinexcom/lib-js-util-base": "git+https://github.com/bitfinexcom/lib-js-util-base.git",
+    "async": "3.2.5",
+    "bcrypt": "5.1.1",
+    "bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git"
+  },
+  "devDependencies": {
+    "@bitfinex/lib-js-util-promise": "git+https://github.com/bitfinexcom/lib-js-util-promise",
+    "brittle": "3.7.0",
+    "sqlite3": "5.1.7",
+    "standard": "17.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tetherto/svc-facs-auth.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tetherto/svc-facs-auth/issues"
+  },
+  "homepage": "https://github.com/tetherto/svc-facs-auth#readme"
+}
