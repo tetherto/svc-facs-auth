@@ -42,7 +42,7 @@ Creates a new user with specified roles, permissions, name, and optional profile
   - `roles<string[]>`: Array of roles for the user.
   - `password<string>`: Password for the user.
   - `name<string>`: Full name of the user.
-  - `profilePicture<string>`: URL for the user's profile picture.
+  - `picture<string>`: URL for the user's profile picture.
 
 ```javascript
 const result = await auth.createUser({
@@ -50,7 +50,7 @@ const result = await auth.createUser({
   roles: ['admin'],
   password: 'securepassword',
   name: 'Example User',
-  profilePicture: 'https://example.com/profile.jpg'
+  picture: 'https://example.com/profile.jpg'
 });
 ```
 
@@ -64,7 +64,7 @@ Updates an existing user with new details such as roles, permissions, name, and 
     - `roles<string[]>`: Array of roles for the user.
     - `password<string>`: New password for the user.
     - `name<string>`: New name of the user.
-    - `profilePicture<string>`: URL for the new profile picture.
+    - `picture<string>`: URL for the new profile picture.
 
 **Example Usage:**
 ```javascript
@@ -73,7 +73,7 @@ const result = await auth.updateUser({
   email: 'new@example.com',
   roles: ['admin'],
   name: 'New Name',
-  profilePicture: 'https://example.com/new-picture.jpg'
+  picture: 'https://example.com/new-picture.jpg'
 });
 ```
 

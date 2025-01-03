@@ -42,7 +42,7 @@ test('init', async (t) => {
     roles: JSON.stringify(['*']),
     password: null,
     name: 'Super Admin',
-    profile_picture: null
+    picture: null
   }, 'superAdmin created')
 })
 
@@ -52,7 +52,7 @@ test('createUser', async (t) => {
     email: 'test1@localhost',
     roles: ['user'],
     name: 'Test User',
-    profilePicture: 'https://example.com/profile.jpg'
+    picture: 'https://example.com/profile.jpg'
   })
 
   const user = await authFac._sqlite.getAsync(
@@ -65,7 +65,7 @@ test('createUser', async (t) => {
     roles: JSON.stringify(['user']),
     password: null,
     name: 'Test User',
-    profile_picture: 'https://example.com/profile.jpg'
+    picture: 'https://example.com/profile.jpg'
   }, 'valid user created')
 
   // Create a user with missing email
@@ -180,7 +180,7 @@ test('updateUser', async (t) => {
     roles: ['user'],
     password: 'newpassword',
     name: 'Updated User', // Update name
-    profilePicture: 'https://example.com/updated-profile.jpg' // Update profile picture
+    picture: 'https://example.com/updated-profile.jpg' // Update profile picture
   })
 
   const user = await authFac._sqlite.getAsync(
@@ -192,7 +192,7 @@ test('updateUser', async (t) => {
     email: 'test3@localhost',
     roles: JSON.stringify(['user']),
     name: 'Updated User', // Validate updated name
-    profile_picture: 'https://example.com/updated-profile.jpg' // Validate updated profile picture
+    picture: 'https://example.com/updated-profile.jpg' // Validate updated profile picture
   }, 'user updated correctly')
 })
 

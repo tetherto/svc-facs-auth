@@ -124,7 +124,7 @@ class AuthFacility extends Base {
     return newToken
   }
 
-  async createUser ({ email, roles = [], password = null, name = null, profilePicture = null }) {
+  async createUser ({ email, roles = [], password = null, name = null, picture = null }) {
     const user = await this._sqlite.getAsync(
       'SELECT * FROM users WHERE email = ? LIMIT 1', email
     )
@@ -148,12 +148,12 @@ class AuthFacility extends Base {
     password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
 
     await this._sqlite.runAsync(
-      'INSERT INTO users (email, roles, password, name, profile_picture) VALUES (?, ?, ?, ?, ?)',
-      [email, JSON.stringify(roles), password, name, profilePicture]
+      'INSERT INTO users (email, roles, password, name, picture) VALUES (?, ?, ?, ?, ?)',
+      [email, JSON.stringify(roles), password, name, picture]
     )
   }
 
-  async updateUser ({ token, email, roles = [], password = null, name = null, profilePicture = null }) {
+  async updateUser ({ token, email, roles = [], password = null, name = null, picture = null }) {
     let user = await this._getTokenFromDb(token)
     const userId = user?.userId
     if (!userId) {
@@ -188,9 +188,9 @@ class AuthFacility extends Base {
       updates.push('name = ?')
       params.push(name)
     }
-    if (profilePicture) {
-      updates.push('profile_picture = ?')
-      params.push(profilePicture)
+    if (picture) {
+      updates.push('picture = ?')
+      params.push(picture)
     }
 
     if (updates.length === 0) {
