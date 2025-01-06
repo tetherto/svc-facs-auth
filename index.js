@@ -270,14 +270,17 @@ class AuthFacility extends Base {
       res = await this._sqlite.getAsync(
         'SELECT * FROM auth_tokens WHERE token = ? LIMIT 1',
         token)
-
-      if (res) {
-        res.metadata = res.metadata ? JSON.parse(res.metadata) : {}
-        res.ips = JSON.parse(res.ips)
-        this._lru.set(ckey, res)
-      }
     }
 
+    if (res) {
+      const metadata = await this._sqlite.getAsync(
+        'SELECT * FROM users WHERE id = ? LIMIT 1',
+        res?.userId
+      )
+      res.metadata = metadata
+      res.ips = typeof res.ips === 'string' ? JSON.parse(res.ips) : res.ips
+      this._lru.set(ckey, res)
+    }
     return res
   }
 
