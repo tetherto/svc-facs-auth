@@ -172,6 +172,25 @@ test('updateUser', async (t) => {
     roles: ['user']
   })
 
+  // Test ERR_NO_UPDATE_FIELDS: Attempt to update with no fields provided
+  await t.exception(
+    async () => await authFac.updateUser({ token }),
+    /ERR_NO_UPDATE_FIELDS/,
+    'throws error when no fields are provided'
+  )
+
+  // Test ERR_INVALID_ROLES: Attempt to update with invalid roles
+  await t.exception(
+    async () => {
+      await authFac.updateUser({
+        token,
+        roles: ['invalid-role']
+      })
+    },
+    /ERR_INVALID_ROLES/,
+    'throws error for invalid role values'
+  )
+
   // Update user with new email, password, name, and profile picture
   // NOTE: password is hashed before storing
   await authFac.updateUser({

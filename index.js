@@ -177,6 +177,11 @@ class AuthFacility extends Base {
       params.push(email)
     }
     if (roles.length > 0) {
+      const validRoles = Object.keys(this.conf.roles)
+      const invalidRoles = roles.filter((role) => !validRoles.includes(role))
+      if (invalidRoles.length > 0) {
+        throw new Error('ERR_INVALID_ROLES')
+      }
       updates.push('roles = ?')
       params.push(JSON.stringify(roles))
     }
