@@ -122,6 +122,18 @@ test('regenerateToken', async (t) => {
     /ERR_ROLES_INVALID/,
     'throw error on incorrect roles'
   )
+
+  const oldSuperAdminToken = await authFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 2,
+    roles: ['*']
+  })
+  
+  // regenerate token with super admin role
+  await t.execution(
+    async () => await authFac.regenerateToken({ oldToken: oldSuperAdminToken, roles: ['*']}),
+    'valid super admin token regenerated'
+  )
 })
 
 test('tokenPerms', async (t) => {
