@@ -108,7 +108,7 @@ class AuthFacility extends Base {
     const userId = old.userId
 
     const oldRoles = []
-    const rolesMatch = oldToken.match(/(roles:[a-z:]*)/)
+    const rolesMatch = oldToken.match(/(roles:[a-z*:]*)/)
     if (rolesMatch && rolesMatch[1]) {
       oldRoles.push(...(rolesMatch[1].replace('roles:', '').split(':')))
     }
