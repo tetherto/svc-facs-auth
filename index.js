@@ -299,7 +299,7 @@ class AuthFacility extends Base {
   }
 
   listUsers () {
-    return this._sqlite.allAsync('SELECT id, email, roles FROM users WHERE roles <> \'["*"]\'')
+    return this._sqlite.allAsync("SELECT id, email, roles FROM users WHERE id <> '1'")
   }
 
   async deleteUser (id) {
