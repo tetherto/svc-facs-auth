@@ -299,12 +299,20 @@ class AuthFacility extends Base {
   }
 
   getUserById(id) {
+    if (!id) {
+      return
+    }
+
     return this._sqlite.getAsync(
       'SELECT id, email, roles FROM users WHERE id = ? LIMIT 1', id
     )
   }
 
   getUserByEmail(email) {
+    if (!email) {
+      return
+    }
+
     return this._sqlite.getAsync(
       'SELECT id, email, roles FROM users WHERE email = ? LIMIT 1', email
     )
