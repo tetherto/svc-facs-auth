@@ -298,6 +298,30 @@ class AuthFacility extends Base {
     return token
   }
 
+  listUsers () {
+    return new Promise((resolve, reject) => {
+      this._sqlite.db.all('SELECT id, email, roles FROM users WHERE roles <> \'["*"]\'', (err, res) =>
+        err ? reject(err) : resolve(res)
+      )
+    })
+  }
+
+  async deleteUser (id) {
+    if (!id) {
+      return false
+    }
+
+    if (id.toString() === '1') {
+      throw new Error('ERR_NOT_ALLOWED')
+    }
+
+    await this._sqlite.runAsync(
+      'DELETE from users WHERE id=?', [id]
+    )
+
+    return true
+  }
+
   async _start (cb) {
     async.series([
       next => { super._start(next) },
