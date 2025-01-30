@@ -4,7 +4,7 @@ const async = require('async')
 const Base = require('bfx-facs-base')
 const TABLES = require('./lib/tables')
 const { dateNowSec, extractIps, isValidIp } = require('./lib/utils')
-const { isNil, isPlainObject, getArrayUniq, union } = require('@bitfinexcom/lib-js-util-base')
+const { isEqual, isNil, isPlainObject, getArrayUniq, union } = require('@bitfinexcom/lib-js-util-base')
 const crypto = require('crypto')
 const bcrypt = require('bcrypt')
 
@@ -166,16 +166,14 @@ class AuthFacility extends Base {
   }
 
   async compareUser ({ token, email = null, roles = null, password = null }) {
-    let user = await this._getTokenFromDb(token)
+    const user = await this._getTokenFromDb(token)
     const userId = user?.userId
     if (!userId) {
       throw new Error('ERR_TOKEN_INVALID')
     }
 
-    user = await this._sqlite.getAsync(
-      'SELECT * FROM users WHERE id = ? LIMIT 1', userId
-    )
-    if (!user) {
+    const dbUser = await this._sqlite.getAsync('SELECT * FROM users WHERE id = ? LIMIT 1', userId)
+    if (!dbUser) {
       throw new Error('ERR_USER_NOT_FOUND')
     }
 
@@ -183,27 +181,13 @@ class AuthFacility extends Base {
       throw new Error('ERR_NO_FIELDS_PROVIDED')
     }
 
-    let isMatch = true
+    const checks = [
+      !email || dbUser.email === email,
+      !roles || isEqual(JSON.parse(dbUser.roles || '[]').sort(), roles.sort()),
+      !password || await bcrypt.compare(password, dbUser.password)
+    ]
 
-    if (email && user.email !== email) {
-      isMatch = false
-    }
-
-    if (roles) {
-      const storedRoles = JSON.parse(user.roles || '[]')
-      if (JSON.stringify(storedRoles.sort()) !== JSON.stringify(roles.sort())) {
-        isMatch = false
-      }
-    }
-
-    if (password) {
-      const isPasswordValid = await bcrypt.compare(password, user.password)
-      if (!isPasswordValid) {
-        isMatch = false
-      }
-    }
-
-    return isMatch
+    return checks.every(Boolean)
   }
 
   _mergePerms (arr) {
