@@ -256,3 +256,31 @@ test('cleanupTokens', async (t) => {
 
   t.is(authTokens.length, 0, 'token deleted')
 })
+
+test('listUsers', async (t) => {
+  await authFac.createUser({ email: 'test4@localhost', roles: ['user'] })
+
+  const users = await authFac.listUsers()
+  
+  t.is(Array.isArray(users), true, 'list of users returned')
+  t.is(users.find(user => user.id === 1), undefined, 'super admin is not returned')
+  t.is(users.every(user => user.id !== undefined && user.email !== undefined && user.roles !== undefined), true, 'user has details')
+  t.is(users.every(user => user.password === undefined), true, 'password is not returned')
+})
+
+test('deleteUser', async (t) => {
+  await authFac.createUser({ email: 'test5@localhost', roles: ['user'] })
+
+  const user = await authFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'test5@localhost'
+  )
+
+  await t.execution(async () => await authFac.deleteUser(user.id), 'delete user is successful')
+  
+  const userToCheck = await authFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'test5@localhost'
+  )
+
+  t.is(userToCheck, undefined, 'user is deleted')
+  await t.exception(async () => await authFac.deleteUser(1), 'super user can not be deleted')
+})
