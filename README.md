@@ -196,6 +196,8 @@ const users = await auth.listUsers('callback-type', request)
 ### `auth.deleteUser(id)`
 Deletes the user with the provided id.
 
+**Parameters:**
+- `id<string>`: id of the user.
 
 ```javascript
 await auth.deleteUser('23')
