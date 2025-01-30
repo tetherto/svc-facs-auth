@@ -128,10 +128,10 @@ test('regenerateToken', async (t) => {
     userId: 2,
     roles: ['*']
   })
-  
+
   // regenerate token with super admin role
   await t.execution(
-    async () => await authFac.regenerateToken({ oldToken: oldSuperAdminToken, roles: ['*']}),
+    async () => await authFac.regenerateToken({ oldToken: oldSuperAdminToken, roles: ['*'] }),
     'valid super admin token regenerated'
   )
 })
@@ -261,7 +261,7 @@ test('listUsers', async (t) => {
   await authFac.createUser({ email: 'test4@localhost', roles: ['user'] })
 
   const users = await authFac.listUsers()
-  
+
   t.is(Array.isArray(users), true, 'list of users returned')
   t.is(users.find(user => user.id === 1), undefined, 'super admin is not returned')
   t.is(users.every(user => user.id !== undefined && user.email !== undefined && user.roles !== undefined), true, 'user has details')
@@ -276,7 +276,7 @@ test('deleteUser', async (t) => {
   )
 
   await t.execution(async () => await authFac.deleteUser(user.id), 'delete user is successful')
-  
+
   const userToCheck = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test5@localhost'
   )
