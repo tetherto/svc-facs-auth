@@ -61,7 +61,27 @@ const result = await auth.updateUser({
   token: 'some-token',
   email: 'new@example.com',
   roles: ['admin']
-)
+})
+```
+
+### `auth.compareUser(req)`
+Compares user details (email, password, roles) with the stored user information.
+
+**Parameters:**
+- `req<object>`: Object containing user details for comparison.
+    - `token<string>`: Authentication token for the user.
+    - `email<string> (optional)`: Email address to compare.
+    - `roles<string[]> (optional)`: Array of roles to compare.
+    - `password<string> (optional)`: Password to compare.
+
+```javascript
+const isMatching = await auth.compareUser({
+  token: 'user-token',
+  email: 'test@example.com',
+  roles: ['user'],
+  password: 'securepassword'
+})
+console.log(isMatching) // true or false
 ```
 
 ### `auth.genToken(req)`

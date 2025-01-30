@@ -165,6 +165,47 @@ class AuthFacility extends Base {
     )
   }
 
+  async compareUser ({ token, email = null, roles = null, password = null }) {
+    let user = await this._getTokenFromDb(token)
+    const userId = user?.userId
+    if (!userId) {
+      throw new Error('ERR_TOKEN_INVALID')
+    }
+
+    user = await this._sqlite.getAsync(
+      'SELECT * FROM users WHERE id = ? LIMIT 1', userId
+    )
+    if (!user) {
+      throw new Error('ERR_USER_NOT_FOUND')
+    }
+
+    if (!email && !roles && !password) {
+      throw new Error('ERR_NO_FIELDS_PROVIDED')
+    }
+
+    let isMatch = true
+
+    if (email && user.email !== email) {
+      isMatch = false
+    }
+
+    if (roles) {
+      const storedRoles = JSON.parse(user.roles || '[]')
+      if (JSON.stringify(storedRoles.sort()) !== JSON.stringify(roles.sort())) {
+        isMatch = false
+      }
+    }
+
+    if (password) {
+      const isPasswordValid = await bcrypt.compare(password, user.password)
+      if (!isPasswordValid) {
+        isMatch = false
+      }
+    }
+
+    return isMatch
+  }
+
   _mergePerms (arr) {
     if (!Array.isArray(arr) || !arr.length) {
       return
