@@ -185,6 +185,26 @@ Handles authentication callbacks by resolving tokens and returning authenticatio
 const token = await auth.authCallbackHandler('callback-type', request)
 ```
 
+### `auth.getUserById(id)`
+Return the user with the given id
+
+**Parameters:**
+- `id<string>`: id of the user.
+
+```javascript
+const user = await auth.getUserById('3')
+```
+
+### `auth.getUserByEmail(email)`
+Return the user with the given email
+
+**Parameters:**
+- `id<string>`: email of the user.
+
+```javascript
+const user = await auth.getUserByEmail('new@example.com')
+```
+
 ### `auth.listUsers()`
 Returns a list of users present. Does not return the super admin user.
 
