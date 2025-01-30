@@ -184,3 +184,19 @@ Handles authentication callbacks by resolving tokens and returning authenticatio
 ```javascript
 const token = await auth.authCallbackHandler('callback-type', request)
 ```
+
+### `auth.listUsers()`
+Returns a list of users present. Does not return the super admin user.
+
+
+```javascript
+const users = await auth.listUsers('callback-type', request)
+```
+
+### `auth.deleteUser(id)`
+Deletes the user with the provided id.
+
+
+```javascript
+await auth.deleteUser('23')
+```
