@@ -265,13 +265,13 @@ test('getUser', async (t) => {
   const expected = {
     id: user.id,
     email: user.email,
-    roles: user.roles,
+    roles: user.roles
   }
 
   let res = await authFac.getUserById(user.id)
   t.alike(res, expected, 'user fetched by id')
   t.is(res.password, undefined, 'password is not returned')
-  
+
   res = await authFac.getUserByEmail(user.email)
   t.alike(res, expected, 'user fetched by email')
   t.is(res.password, undefined, 'password is not returned')

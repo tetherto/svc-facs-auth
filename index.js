@@ -298,7 +298,7 @@ class AuthFacility extends Base {
     return token
   }
 
-  getUserById(id) {
+  getUserById (id) {
     if (!id) {
       return
     }
@@ -308,7 +308,7 @@ class AuthFacility extends Base {
     )
   }
 
-  getUserByEmail(email) {
+  getUserByEmail (email) {
     if (!email) {
       return
     }
