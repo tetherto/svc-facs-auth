@@ -283,7 +283,6 @@ test('listUsers', async (t) => {
   const users = await authFac.listUsers()
 
   t.is(Array.isArray(users), true, 'list of users returned')
-  t.is(users.find(user => user.id === 1), undefined, 'super admin is not returned')
   t.is(users.every(user => user.id !== undefined && user.email !== undefined && user.roles !== undefined), true, 'user has details')
   t.is(users.every(user => user.password === undefined), true, 'password is not returned')
 })

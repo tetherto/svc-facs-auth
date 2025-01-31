@@ -298,28 +298,28 @@ class AuthFacility extends Base {
     return token
   }
 
-  getUserById (id) {
+  async getUserById (id) {
     if (!id) {
       return
     }
 
-    return this._sqlite.getAsync(
+    return await this._sqlite.getAsync(
       'SELECT id, email, roles FROM users WHERE id = ? LIMIT 1', id
     )
   }
 
-  getUserByEmail (email) {
+  async getUserByEmail (email) {
     if (!email) {
       return
     }
 
-    return this._sqlite.getAsync(
+    return await this._sqlite.getAsync(
       'SELECT id, email, roles FROM users WHERE email = ? LIMIT 1', email
     )
   }
 
-  listUsers () {
-    return this._sqlite.allAsync("SELECT id, email, roles FROM users WHERE id <> '1'")
+  async listUsers () {
+    return await this._sqlite.allAsync('SELECT id, email, roles FROM users')
   }
 
   async deleteUser (id) {
