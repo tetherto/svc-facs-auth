@@ -206,8 +206,7 @@ const user = await auth.getUserByEmail('new@example.com')
 ```
 
 ### `auth.listUsers()`
-Returns a list of users present. Does not return the super admin user.
-
+Returns a list of users present
 
 ```javascript
 const users = await auth.listUsers('callback-type', request)
