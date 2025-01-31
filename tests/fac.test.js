@@ -128,10 +128,10 @@ test('regenerateToken', async (t) => {
     userId: 2,
     roles: ['*']
   })
-  
+
   // regenerate token with super admin role
   await t.execution(
-    async () => await authFac.regenerateToken({ oldToken: oldSuperAdminToken, roles: ['*']}),
+    async () => await authFac.regenerateToken({ oldToken: oldSuperAdminToken, roles: ['*'] }),
     'valid super admin token regenerated'
   )
 })
@@ -255,4 +255,51 @@ test('cleanupTokens', async (t) => {
   )
 
   t.is(authTokens.length, 0, 'token deleted')
+})
+
+test('getUser', async (t) => {
+  await authFac.createUser({ email: 'test6@localhost', roles: ['user'] })
+  const user = await authFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'test6@localhost'
+  )
+  const expected = {
+    id: user.id,
+    email: user.email,
+    roles: user.roles
+  }
+
+  let res = await authFac.getUserById(user.id)
+  t.alike(res, expected, 'user fetched by id')
+  t.is(res.password, undefined, 'password is not returned')
+
+  res = await authFac.getUserByEmail(user.email)
+  t.alike(res, expected, 'user fetched by email')
+  t.is(res.password, undefined, 'password is not returned')
+})
+
+test('listUsers', async (t) => {
+  await authFac.createUser({ email: 'test4@localhost', roles: ['user'] })
+
+  const users = await authFac.listUsers()
+
+  t.is(Array.isArray(users), true, 'list of users returned')
+  t.is(users.every(user => user.id !== undefined && user.email !== undefined && user.roles !== undefined), true, 'user has details')
+  t.is(users.every(user => user.password === undefined), true, 'password is not returned')
+})
+
+test('deleteUser', async (t) => {
+  await authFac.createUser({ email: 'test5@localhost', roles: ['user'] })
+
+  const user = await authFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'test5@localhost'
+  )
+
+  await t.execution(async () => await authFac.deleteUser(user.id), 'delete user is successful')
+
+  const userToCheck = await authFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'test5@localhost'
+  )
+
+  t.is(userToCheck, undefined, 'user is deleted')
+  await t.exception(async () => await authFac.deleteUser(1), 'super user can not be deleted')
 })

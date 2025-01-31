@@ -298,6 +298,46 @@ class AuthFacility extends Base {
     return token
   }
 
+  async getUserById (id) {
+    if (!id) {
+      return
+    }
+
+    return await this._sqlite.getAsync(
+      'SELECT id, email, roles FROM users WHERE id = ? LIMIT 1', id
+    )
+  }
+
+  async getUserByEmail (email) {
+    if (!email) {
+      return
+    }
+
+    return await this._sqlite.getAsync(
+      'SELECT id, email, roles FROM users WHERE email = ? LIMIT 1', email
+    )
+  }
+
+  async listUsers () {
+    return await this._sqlite.allAsync('SELECT id, email, roles FROM users')
+  }
+
+  async deleteUser (id) {
+    if (!id) {
+      return false
+    }
+
+    if (id.toString() === '1') {
+      throw new Error('ERR_NOT_ALLOWED')
+    }
+
+    await this._sqlite.runAsync(
+      'DELETE from users WHERE id=?', [id]
+    )
+
+    return true
+  }
+
   async _start (cb) {
     async.series([
       next => { super._start(next) },
