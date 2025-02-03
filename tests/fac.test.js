@@ -183,6 +183,87 @@ test('updateUser', async (t) => {
   }, 'user updated correctly')
 })
 
+test('compareUser', async (t) => {
+  // Create a user with email, roles, and password
+  const password = 'securepassword'
+  await authFac.createUser({ email: 'compare@localhost', roles: ['user'], password })
+
+  // Fetch the user from the database
+  const user = await authFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'compare@localhost'
+  )
+
+  // Generate an authentication token for the user
+  const token = await authFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: user.id,
+    roles: ['user']
+  })
+
+  // Test with correct email
+  t.is(
+    await authFac.compareUser({ token, email: 'compare@localhost' }),
+    true,
+    'compareUser should return true for matching email'
+  )
+
+  // Test with incorrect email
+  t.is(
+    await authFac.compareUser({ token, email: 'wrong@localhost' }),
+    false,
+    'compareUser should return false for incorrect email'
+  )
+
+  // Test with correct roles
+  t.is(
+    await authFac.compareUser({ token, roles: ['user'] }),
+    true,
+    'compareUser should return true for matching roles'
+  )
+
+  // Test with incorrect roles
+  t.is(
+    await authFac.compareUser({ token, roles: ['admin'] }),
+    false,
+    'compareUser should return false for incorrect roles'
+  )
+
+  // Test with correct password
+  t.is(
+    await authFac.compareUser({ token, password }),
+    true,
+    'compareUser should return true for matching password'
+  )
+
+  // Test with incorrect password
+  t.is(
+    await authFac.compareUser({ token, password: 'wrongpassword' }),
+    false,
+    'compareUser should return false for incorrect password'
+  )
+
+  // Test with multiple correct fields (email, password, roles)
+  t.is(
+    await authFac.compareUser({ token, email: 'compare@localhost', password, roles: ['user'] }),
+    true,
+    'compareUser should return true when all fields match'
+  )
+
+  // Test with one incorrect field
+  t.is(
+    await authFac.compareUser({ token, email: 'compare@localhost', password, roles: ['admin'] }),
+    false,
+    'compareUser should return false if one field does not match'
+  )
+
+  // Test with missing fields (should throw error)
+  await t.exception(
+    async () => await authFac.compareUser({ token }),
+    /ERR_NO_FIELDS_PROVIDED/,
+    'compareUser should throw error if no fields are provided'
+  )
+})
+
 test('authHandlers', async (t) => {
   // add a simple auth handler
   authFac.addHandlers({
