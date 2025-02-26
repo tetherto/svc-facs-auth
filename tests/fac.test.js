@@ -86,12 +86,12 @@ test('createToken', async (t) => {
   const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
-    roles: ['user']
+    roles: ['normal_user']
   })
 
-  // Token should be like 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-2-roles:user'
+  // Token should be like 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-2-roles:normal_user'
   // match all except uuid with regex
-  t.is(token.match(/pub:api:[a-z0-9-]*-2-roles:user/)[0], token, 'valid token created')
+  t.is(token.match(/pub:api:[a-z0-9-]*-2-roles:normal_user/)[0], token, 'valid token created')
 })
 
 test('regenerateToken', async (t) => {
@@ -99,15 +99,15 @@ test('regenerateToken', async (t) => {
   const oldToken = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
-    roles: ['user']
+    roles: ['user', 'site_manager']
   })
 
   // regenerate token with correct old token
-  const newToken = await authFac.regenerateToken({ oldToken, roles: ['user'] })
+  const newToken = await authFac.regenerateToken({ oldToken, roles: ['user', 'site_manager'] })
 
   // Token should be like 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-2-roles:user'
   // match all except uuid with regex
-  t.is(newToken.match(/pub:api:[a-z0-9-]*-2-roles:user/)[0], newToken, 'valid token regenerated')
+  t.is(newToken.match(/pub:api:[a-z0-9-]*-2-roles:user:site_manager/)[0], newToken, 'valid token regenerated')
 
   // regenerate token with incorrect old token
   await t.exception(
