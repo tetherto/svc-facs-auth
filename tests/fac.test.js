@@ -178,7 +178,7 @@ test('updateUser', async (t) => {
   )))
 
   const tokens = await authFac._sqlite.allAsync(
-    'SELECT * FROM auth_tokens WHERE userId = ?', userId,
+    'SELECT * FROM auth_tokens WHERE userId = ?', userId
   )
 
   // update user with new email and password
@@ -196,7 +196,7 @@ test('updateUser', async (t) => {
   }, 'user updated correctly')
 
   const dbTokensAfterUpdate = await authFac._sqlite.allAsync(
-    'SELECT * FROM auth_tokens WHERE userId = ?', user.id,
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
   )
   t.is(dbTokensAfterUpdate.length, 0, 'tokens of user deleted from db')
 
@@ -398,7 +398,7 @@ test('deleteUser', async (t) => {
   const user = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test5@localhost'
   )
-  
+
   await Promise.all(Array(3).fill(null).map(() => (
     authFac.genToken({
       ips: ['127.0.0.1'],
@@ -408,7 +408,7 @@ test('deleteUser', async (t) => {
   )))
 
   const tokens = await authFac._sqlite.allAsync(
-    'SELECT * FROM auth_tokens WHERE userId = ?', user.id,
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
   )
 
   await t.execution(async () => await authFac.deleteUser(user.id), 'delete user is successful')
@@ -421,7 +421,7 @@ test('deleteUser', async (t) => {
   await t.exception(async () => await authFac.deleteUser(1), 'super user can not be deleted')
 
   const dbTokensAfterDelete = await authFac._sqlite.allAsync(
-    'SELECT * FROM auth_tokens WHERE userId = ?', user.id,
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
   )
   t.is(dbTokensAfterDelete.length, 0, 'tokens of user deleted from db')
 
