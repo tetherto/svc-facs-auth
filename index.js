@@ -39,6 +39,11 @@ class AuthFacility extends Base {
         'INSERT INTO users (email, roles) VALUES (?, ?)', [admin, JSON.stringify(['*'])]
       )
     } else if (user.email !== admin) {
+      const existingUser = await this.getUserByEmail(admin)
+      if (existingUser) {
+        await this.deleteUser(existingUser.id)
+      }
+
       await this._sqlite.runAsync(
         'UPDATE users SET email = ? WHERE id = 1', [admin]
       )
