@@ -163,6 +163,8 @@ class AuthFacility extends Base {
     await this._sqlite.runAsync(
       'UPDATE users SET email = ?, roles = ?, password = ? WHERE id = ?', [email, JSON.stringify(roles), password, userId]
     )
+
+    await this._deleteTokensOfUser(userId)
   }
 
   async compareUser ({ token, email = null, roles = null, password = null }) {
@@ -360,7 +362,21 @@ class AuthFacility extends Base {
       'DELETE from users WHERE id=?', [id]
     )
 
+    await this._deleteTokensOfUser(id)
+
     return true
+  }
+
+  async _deleteTokensOfUser (id) {
+    const tokens = await this._sqlite.allAsync(
+      'SELECT * from auth_tokens WHERE userId=?', [id]
+    )
+
+    tokens.forEach(({ token }) => this._lru.remove(`gotokens:${token}`))
+
+    await this._sqlite.allAsync(
+      'DELETE from auth_tokens WHERE userId=?', [id]
+    )
   }
 
   async _start (cb) {

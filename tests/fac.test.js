@@ -161,12 +161,25 @@ test('tokenPerms', async (t) => {
 })
 
 test('updateUser', async (t) => {
+  const userId = 2
   // create a token with correct email and password
   const token = await authFac.genToken({
     ips: ['127.0.0.1'],
-    userId: 2,
+    userId,
     roles: ['user']
   })
+
+  await Promise.all(Array(3).fill(null).map(() => (
+    authFac.genToken({
+      ips: ['127.0.0.1'],
+      userId,
+      roles: ['user']
+    })
+  )))
+
+  const tokens = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', userId,
+  )
 
   // update user with new email and password
   // NOTE: password is hashed before storing
@@ -181,6 +194,17 @@ test('updateUser', async (t) => {
     email: 'test3@localhost',
     roles: JSON.stringify(['user'])
   }, 'user updated correctly')
+
+  const dbTokensAfterUpdate = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id,
+  )
+  t.is(dbTokensAfterUpdate.length, 0, 'tokens of user deleted from db')
+
+  const numCachedTokensAfterUpdate = tokens.map(token => authFac._lru.get(`gotokens:${token}`)).filter(token => !!token).length
+  t.is(numCachedTokensAfterUpdate, 0, 'tokens of user deleted from cache')
+
+  const resolvedToken = await authFac.resolveToken(tokens[0])
+  t.is(resolvedToken, null, 'cannot resolve old token after user update')
 })
 
 test('compareUser', async (t) => {
@@ -374,6 +398,18 @@ test('deleteUser', async (t) => {
   const user = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test5@localhost'
   )
+  
+  await Promise.all(Array(3).fill(null).map(() => (
+    authFac.genToken({
+      ips: ['127.0.0.1'],
+      userId: user.id,
+      roles: ['normal_user']
+    })
+  )))
+
+  const tokens = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id,
+  )
 
   await t.execution(async () => await authFac.deleteUser(user.id), 'delete user is successful')
 
@@ -383,4 +419,15 @@ test('deleteUser', async (t) => {
 
   t.is(userToCheck, undefined, 'user is deleted')
   await t.exception(async () => await authFac.deleteUser(1), 'super user can not be deleted')
+
+  const dbTokensAfterDelete = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id,
+  )
+  t.is(dbTokensAfterDelete.length, 0, 'tokens of user deleted from db')
+
+  const numCachedTokensAfterDelete = tokens.map(token => authFac._lru.get(`gotokens:${token}`)).filter(token => !!token).length
+  t.is(numCachedTokensAfterDelete, 0, 'tokens of user deleted from cache')
+
+  const resolvedToken = await authFac.resolveToken(tokens[0])
+  t.is(resolvedToken, null, 'cannot resolve old token after user delete')
 })
