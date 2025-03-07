@@ -3,6 +3,7 @@
 const test = require('brittle')
 const { promiseSleep } = require('@bitfinex/lib-js-util-promise')
 const { omit } = require('@bitfinexcom/lib-js-util-base')
+const async = require('async')
 
 const Fac = require('..')
 const caller = { ctx: { root: __dirname } }
@@ -169,13 +170,13 @@ test('updateUser', async (t) => {
     roles: ['user']
   })
 
-  await Promise.all(Array(3).fill(null).map(() => (
+  await async.times(3, async () => (
     authFac.genToken({
       ips: ['127.0.0.1'],
       userId,
       roles: ['user']
     })
-  )))
+  ))
 
   const tokens = await authFac._sqlite.allAsync(
     'SELECT * FROM auth_tokens WHERE userId = ?', userId
@@ -399,13 +400,11 @@ test('deleteUser', async (t) => {
     'SELECT * FROM users WHERE email = ?', 'test5@localhost'
   )
 
-  await Promise.all(Array(3).fill(null).map(() => (
-    authFac.genToken({
-      ips: ['127.0.0.1'],
-      userId: user.id,
-      roles: ['normal_user']
-    })
-  )))
+  await async.times(3, async () => authFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: user.id,
+    roles: ['normal_user']
+  }))
 
   const tokens = await authFac._sqlite.allAsync(
     'SELECT * FROM auth_tokens WHERE userId = ?', user.id
