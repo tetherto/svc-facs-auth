@@ -316,7 +316,7 @@ test('authHandlers', async (t) => {
   // throw error in wrong password
   await t.exception(
     async () => await authFac.authCallbackHandler('password', { email: 'test3@localhost', password: 'incorrect', ip: '127.0.0.1' }),
-    /ERR_AUTH_FAIL/,
+    /ERR_PASSWORD_INVALID/,
     'throw error on incorrect password'
   )
 
@@ -330,7 +330,7 @@ test('authHandlers', async (t) => {
   // create a token with incorrect email and password
   await t.exception(
     async () => await authFac.authCallbackHandler('password', { email: 'test100@localhost', password: 'incorrect', ip: '127.0.0.1' }),
-    /ERR_AUTH_FAIL/,
+    /ERR_USER_NOT_EXIST/,
     'throw error on incorrect email and password'
   )
 })

@@ -299,7 +299,7 @@ class AuthFacility extends Base {
 
     const info = await handler(this.caller, req)
     if (!info || !info.email) {
-      return null
+      throw new Error('ERR_EMAIL_INVALID')
     }
 
     // read user from table `users`
@@ -307,12 +307,18 @@ class AuthFacility extends Base {
       'SELECT * FROM users WHERE email = ? LIMIT 1', info.email
     )
     if (!user) {
-      return null
+      throw new Error('ERR_USER_NOT_EXIST')
     }
 
     // check if password matches
-    if (info.password && user.password && !await bcrypt.compare(info.password, user.password)) {
-      return null
+    if (info.password) {
+      if (!user.password) {
+        throw new Error('ERR_PASSWORD_NOT_SET')
+      }
+      const match = await bcrypt.compare(info.password, user.password)
+      if (!match) {
+        throw new Error('ERR_PASSWORD_INVALID')
+      }
     }
 
     const userId = user.id
