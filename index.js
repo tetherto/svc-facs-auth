@@ -315,8 +315,7 @@ class AuthFacility extends Base {
       if (!user.password) {
         throw new Error('ERR_PASSWORD_NOT_SET')
       }
-      const match = await bcrypt.compare(info.password, user.password)
-      if (!match) {
+      if (!await bcrypt.compare(info.password, user.password)) {
         throw new Error('ERR_PASSWORD_INVALID')
       }
     }
