@@ -241,3 +241,34 @@ Deletes the user with the provided id.
 ```javascript
 await auth.deleteUser('23')
 ```
+
+### `auth.authMfaHandler(type, req)`
+Handles multi-factor authentication (MFA) by invoking the specified MFA handler.
+
+**Parameters:**
+- `type<string>`: The type/name of the MFA handler to invoke (e.g., `'totp'`).
+- `req<object>`: The request object containing necessary authentication details.
+
+**Throws:**
+- `ERR_HANDLER_INVALID` if the specified handler does not exist or is not a function.
+
+```javascript
+const result = await auth.authMfaHandler('totp', { totp: '123456' , ...<Object> })
+```
+
+### `auth.authMfaCallbackHandler(type, req, getUserMfaMethods)`
+Handles authentication callbacks with MFA support. If MFA is required, returns a CSRF token and the list of required MFA methods; otherwise, returns the authentication token.
+
+**Parameters:**
+- `type<string>`: The type of authentication callback.
+- `req<object>`: The request object containing callback details.
+- `getUserMfaMethods<function>`: A function that returns the list of enabled MFA methods for the user.
+
+**Returns:**
+- If MFA is required:
+  An object containing `csrf_token`, `mfa_required: true`, and `mfaMethods` (array of enabled MFA methods).
+- If MFA is not required:
+  An object containing the authentication `token`.
+
+**Throws:**
+ERR_MFA_METHOD_HANDLER_INVALID if getUserMfaMethods is not a function.
