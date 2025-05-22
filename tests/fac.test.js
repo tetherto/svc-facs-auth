@@ -335,32 +335,32 @@ test('authHandlers', async (t) => {
   )
 })
 
-test('authMfaHandler', async t => {
+test('mfaHandler', async t => {
   authFac.addMfaHandlers({
     totp: async (ctx, req) => ({ ok: true, ctx, req })
   })
 
-  const result = await authFac.authMfaHandler('totp', { foo: 1 })
+  const result = await authFac.mfaHandler('totp', { foo: 1 })
   t.is(result.ok, true)
   t.ok(result.ctx)
   t.alike(result.req, { foo: 1 })
   await t.exception(
-    async () => await authFac.authMfaHandler('notfound', {}),
+    async () => await authFac.mfaHandler('notfound', {}),
     /ERR_HANDLER_INVALID/
   )
 })
 
-test('authMfaCallbackHandler', async t => {
+test('mfaCallbackHandler', async t => {
   // No MFA required
   authFac.authCallbackHandler = async () => 'token123'
   const getUserMfaMethodsNone = async () => []
-  const resultNone = await authFac.authMfaCallbackHandler('any', {}, getUserMfaMethodsNone)
+  const resultNone = await authFac.mfaCallbackHandler('any', {}, getUserMfaMethodsNone)
   t.alike(resultNone, { token: 'token123' })
 
   // MFA required
   authFac.authCallbackHandler = async () => 'token456'
   const getUserMfaMethodsSome = async () => ['totp', 'passkey']
-  const resultSome = await authFac.authMfaCallbackHandler('any', {}, getUserMfaMethodsSome)
+  const resultSome = await authFac.mfaCallbackHandler('any', {}, getUserMfaMethodsSome)
   t.ok(resultSome.csrf_token)
   t.is(resultSome.mfa_required, true)
   t.alike(resultSome.mfa_methods, ['totp', 'passkey'])
@@ -369,11 +369,11 @@ test('authMfaCallbackHandler', async t => {
   // Invalid getUserMfaMethods
   authFac.authCallbackHandler = async () => 'token789'
   await t.exception(
-    async () => await authFac.authMfaCallbackHandler('any', {}, null),
+    async () => await authFac.mfaCallbackHandler('any', {}, null),
     /ERR_MFA_METHOD_HANDLER_INVALID/
   )
   await t.exception(
-    async () => await authFac.authMfaCallbackHandler('any', {}, 123),
+    async () => await authFac.mfaCallbackHandler('any', {}, 123),
     /ERR_MFA_METHOD_HANDLER_INVALID/
   )
 })

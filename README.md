@@ -242,7 +242,7 @@ Deletes the user with the provided id.
 await auth.deleteUser('23')
 ```
 
-### `auth.authMfaHandler(type, req)`
+### `auth.mfaHandler(type, req)`
 Handles multi-factor authentication (MFA) by invoking the specified MFA handler.
 
 **Parameters:**
@@ -253,10 +253,10 @@ Handles multi-factor authentication (MFA) by invoking the specified MFA handler.
 - `ERR_HANDLER_INVALID` if the specified handler does not exist or is not a function.
 
 ```javascript
-const result = await auth.authMfaHandler('totp', { totp: '123456' , ...<Object> })
+const result = await auth.mfaHandler('totp', { totp: '123456' , ...<Object> })
 ```
 
-### `auth.authMfaCallbackHandler(type, req, getUserMfaMethods)`
+### `auth.mfaCallbackHandler(type, req, getUserMfaMethods)`
 Handles authentication callbacks with MFA support. If MFA is required, returns a CSRF token and the list of required MFA methods; otherwise, returns the authentication token.
 
 **Parameters:**

@@ -17,7 +17,7 @@ class AuthFacility extends Base {
     this._sqlite = opts.sqlite
 
     this._authHandlers = {}
-    this._authMfaHandlers = {}
+    this._mfaHandlers = {}
 
     this._hasConf = true
 
@@ -57,7 +57,7 @@ class AuthFacility extends Base {
   }
 
   addMfaHandlers (handlers) {
-    Object.assign(this._authMfaHandlers, handlers)
+    Object.assign(this._mfaHandlers, handlers)
   }
 
   _validateTokenOpts ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
@@ -287,8 +287,8 @@ class AuthFacility extends Base {
     )
   }
 
-  async authMfaHandler (type, req) {
-    const handler = this._authMfaHandlers[type]
+  async mfaHandler (type, req) {
+    const handler = this._mfaHandlers[type]
     if (!handler || typeof handler !== 'function') {
       throw new Error('ERR_HANDLER_INVALID')
     }
@@ -296,7 +296,7 @@ class AuthFacility extends Base {
     return await handler(this.caller, req)
   }
 
-  async authMfaCallbackHandler (type, req, getUserMfaMethods) {
+  async mfaCallbackHandler (type, req, getUserMfaMethods) {
     const token = await this.authCallbackHandler(type, req)
 
     if (!getUserMfaMethods || typeof getUserMfaMethods !== 'function') {
