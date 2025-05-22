@@ -17,6 +17,8 @@ class AuthFacility extends Base {
     this._sqlite = opts.sqlite
 
     this._authHandlers = {}
+    this._authMfaHandlers = {}
+
     this._hasConf = true
 
     super.init()
@@ -52,6 +54,10 @@ class AuthFacility extends Base {
 
   addHandlers (handlers) {
     Object.assign(this._authHandlers, handlers)
+  }
+
+  addMfaHandlers (handlers) {
+    Object.assign(this._authMfaHandlers, handlers)
   }
 
   _validateTokenOpts ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
@@ -281,6 +287,38 @@ class AuthFacility extends Base {
     )
   }
 
+  async authMfaHandler (type, req) {
+    const handler = this._authMfaHandlers[type]
+    if (!handler || typeof handler !== 'function') {
+      throw new Error('ERR_HANDLER_INVALID')
+    }
+
+    return await handler(this.caller, req)
+  }
+
+  async authMfaCallbackHandler (type, req, getUserMfaMethods) {
+    const token = await this.authCallbackHandler(type, req)
+
+    if (!getUserMfaMethods || typeof getUserMfaMethods !== 'function') {
+      throw new Error('ERR_MFA_METHOD_HANDLER_INVALID')
+    }
+
+    const mfaMethods = await getUserMfaMethods(this.caller, req)
+
+    if (mfaMethods && mfaMethods.length > 0) {
+      const csrfToken = crypto.randomUUID()
+      this._lru.set(csrfToken, token)
+
+      return {
+        csrf_token: csrfToken,
+        mfa_required: true,
+        mfaMethods
+      }
+    }
+
+    return { token }
+  }
+
   async authCallbackHandler (type, req) {
     const token = await this._resolveAuth(type, req)
 
@@ -294,7 +332,7 @@ class AuthFacility extends Base {
   async _resolveAuth (type, req) {
     const handler = this._authHandlers[type]
     if (!handler || typeof handler !== 'function') {
-      throw new Error('ERR_INVALID_HANDLER')
+      throw new Error('ERR_HANDLER_INVALID')
     }
 
     const info = await handler(this.caller, req)
