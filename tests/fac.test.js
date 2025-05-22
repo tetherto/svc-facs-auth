@@ -335,6 +335,49 @@ test('authHandlers', async (t) => {
   )
 })
 
+test('authMfaHandler', async t => {
+  authFac.addMfaHandlers({
+    totp: async (ctx, req) => ({ ok: true, ctx, req })
+  })
+
+  const result = await authFac.authMfaHandler('totp', { foo: 1 })
+  t.is(result.ok, true)
+  t.ok(result.ctx)
+  t.alike(result.req, { foo: 1 })
+  await t.exception(
+    async () => await authFac.authMfaHandler('notfound', {}),
+    /ERR_HANDLER_INVALID/
+  )
+})
+
+test('authMfaCallbackHandler', async t => {
+  // No MFA required
+  authFac.authCallbackHandler = async () => 'token123'
+  const getUserMfaMethodsNone = async () => []
+  const resultNone = await authFac.authMfaCallbackHandler('any', {}, getUserMfaMethodsNone)
+  t.alike(resultNone, { token: 'token123' })
+
+  // MFA required
+  authFac.authCallbackHandler = async () => 'token456'
+  const getUserMfaMethodsSome = async () => ['totp', 'passkey']
+  const resultSome = await authFac.authMfaCallbackHandler('any', {}, getUserMfaMethodsSome)
+  t.ok(resultSome.csrf_token)
+  t.is(resultSome.mfa_required, true)
+  t.alike(resultSome.mfaMethods, ['totp', 'passkey'])
+  t.is(authFac._lru.get(resultSome.csrf_token), 'token456')
+
+  // Invalid getUserMfaMethods
+  authFac.authCallbackHandler = async () => 'token789'
+  await t.exception(
+    async () => await authFac.authMfaCallbackHandler('any', {}, null),
+    /ERR_MFA_METHOD_HANDLER_INVALID/
+  )
+  await t.exception(
+    async () => await authFac.authMfaCallbackHandler('any', {}, 123),
+    /ERR_MFA_METHOD_HANDLER_INVALID/
+  )
+})
+
 test('cleanupTokens', async (t) => {
   // create a token with correct email and password
   const token = await authFac.genToken({

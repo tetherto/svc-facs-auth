@@ -303,7 +303,7 @@ class AuthFacility extends Base {
       throw new Error('ERR_MFA_METHOD_HANDLER_INVALID')
     }
 
-    const mfaMethods = await getUserMfaMethods(this.caller, req)
+    const mfaMethods = await getUserMfaMethods(this.caller, token, req)
 
     if (mfaMethods && mfaMethods.length > 0) {
       const csrfToken = crypto.randomUUID()
