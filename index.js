@@ -345,7 +345,7 @@ class AuthFacility extends Base {
       'SELECT * FROM users WHERE email = ? LIMIT 1', info.email
     )
     if (!user) {
-      throw new Error('ERR_USER_NOT_EXIST')
+      throw new Error(' ERR_USER_INVALID')
     }
 
     // check if password matches

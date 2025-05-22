@@ -271,4 +271,4 @@ Handles authentication callbacks with MFA support. If MFA is required, returns a
   An object containing the authentication `token`.
 
 **Throws:**
-ERR_MFA_METHOD_HANDLER_INVALID if getUserMfaMethods is not a function.
+- `ERR_MFA_METHOD_HANDLER_INVALID` if getUserMfaMethods is not a function.
