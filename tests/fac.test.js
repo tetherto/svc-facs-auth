@@ -363,7 +363,7 @@ test('authMfaCallbackHandler', async t => {
   const resultSome = await authFac.authMfaCallbackHandler('any', {}, getUserMfaMethodsSome)
   t.ok(resultSome.csrf_token)
   t.is(resultSome.mfa_required, true)
-  t.alike(resultSome.mfaMethods, ['totp', 'passkey'])
+  t.alike(resultSome.mfa_methods, ['totp', 'passkey'])
   t.is(authFac._lru.get(resultSome.csrf_token), 'token456')
 
   // Invalid getUserMfaMethods

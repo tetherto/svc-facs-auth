@@ -266,7 +266,7 @@ Handles authentication callbacks with MFA support. If MFA is required, returns a
 
 **Returns:**
 - If MFA is required:
-  An object containing `csrf_token`, `mfa_required: true`, and `mfaMethods` (array of enabled MFA methods).
+  An object containing `csrf_token`, `mfa_required: true`, and `mfa_methods` (array of enabled MFA methods).
 - If MFA is not required:
   An object containing the authentication `token`.
 

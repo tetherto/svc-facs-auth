@@ -312,7 +312,7 @@ class AuthFacility extends Base {
       return {
         csrf_token: csrfToken,
         mfa_required: true,
-        mfaMethods
+        mfa_methods: mfaMethods
       }
     }
 
