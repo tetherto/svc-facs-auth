@@ -297,12 +297,11 @@ class AuthFacility extends Base {
   }
 
   async mfaCallbackHandler (type, req, getUserMfaMethods) {
-    const token = await this.authCallbackHandler(type, req)
-
     if (!getUserMfaMethods || typeof getUserMfaMethods !== 'function') {
       throw new Error('ERR_MFA_METHOD_HANDLER_INVALID')
     }
 
+    const token = await this.authCallbackHandler(type, req)
     const mfaMethods = await getUserMfaMethods(this.caller, token, req)
 
     if (mfaMethods && mfaMethods.length > 0) {
