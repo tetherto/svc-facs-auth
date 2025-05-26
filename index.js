@@ -17,6 +17,8 @@ class AuthFacility extends Base {
     this._sqlite = opts.sqlite
 
     this._authHandlers = {}
+    this._mfaHandlers = {}
+
     this._hasConf = true
 
     super.init()
@@ -52,6 +54,10 @@ class AuthFacility extends Base {
 
   addHandlers (handlers) {
     Object.assign(this._authHandlers, handlers)
+  }
+
+  addMfaHandlers (handlers) {
+    Object.assign(this._mfaHandlers, handlers)
   }
 
   _validateTokenOpts ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
@@ -281,6 +287,37 @@ class AuthFacility extends Base {
     )
   }
 
+  async mfaHandler (type, req) {
+    const handler = this._mfaHandlers[type]
+    if (!handler || typeof handler !== 'function') {
+      throw new Error('ERR_HANDLER_INVALID')
+    }
+
+    return await handler(this.caller, req)
+  }
+
+  async mfaCallbackHandler (type, req, getUserMfaMethods) {
+    if (!getUserMfaMethods || typeof getUserMfaMethods !== 'function') {
+      throw new Error('ERR_MFA_METHOD_HANDLER_INVALID')
+    }
+
+    const token = await this.authCallbackHandler(type, req)
+    const mfaMethods = await getUserMfaMethods(this.caller, token, req)
+
+    if (mfaMethods && mfaMethods.length > 0) {
+      const csrfToken = crypto.randomUUID()
+      this._lru.set(csrfToken, token)
+
+      return {
+        csrf_token: csrfToken,
+        mfa_required: true,
+        mfa_methods: mfaMethods
+      }
+    }
+
+    return { token }
+  }
+
   async authCallbackHandler (type, req) {
     const token = await this._resolveAuth(type, req)
 
@@ -294,12 +331,12 @@ class AuthFacility extends Base {
   async _resolveAuth (type, req) {
     const handler = this._authHandlers[type]
     if (!handler || typeof handler !== 'function') {
-      throw new Error('ERR_INVALID_HANDLER')
+      throw new Error('ERR_HANDLER_INVALID')
     }
 
     const info = await handler(this.caller, req)
     if (!info || !info.email) {
-      return null
+      throw new Error('ERR_EMAIL_INVALID')
     }
 
     // read user from table `users`
@@ -307,12 +344,17 @@ class AuthFacility extends Base {
       'SELECT * FROM users WHERE email = ? LIMIT 1', info.email
     )
     if (!user) {
-      return null
+      throw new Error(' ERR_USER_INVALID')
     }
 
     // check if password matches
-    if (info.password && user.password && !await bcrypt.compare(info.password, user.password)) {
-      return null
+    if (info.password) {
+      if (!user.password) {
+        throw new Error('ERR_PASSWORD_NOT_SET')
+      }
+      if (!await bcrypt.compare(info.password, user.password)) {
+        throw new Error('ERR_PASSWORD_INVALID')
+      }
     }
 
     const userId = user.id

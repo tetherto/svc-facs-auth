@@ -316,7 +316,7 @@ test('authHandlers', async (t) => {
   // throw error in wrong password
   await t.exception(
     async () => await authFac.authCallbackHandler('password', { email: 'test3@localhost', password: 'incorrect', ip: '127.0.0.1' }),
-    /ERR_AUTH_FAIL/,
+    /ERR_PASSWORD_INVALID/,
     'throw error on incorrect password'
   )
 
@@ -330,8 +330,51 @@ test('authHandlers', async (t) => {
   // create a token with incorrect email and password
   await t.exception(
     async () => await authFac.authCallbackHandler('password', { email: 'test100@localhost', password: 'incorrect', ip: '127.0.0.1' }),
-    /ERR_AUTH_FAIL/,
+    / ERR_USER_INVALID/,
     'throw error on incorrect email and password'
+  )
+})
+
+test('mfaHandler', async t => {
+  authFac.addMfaHandlers({
+    totp: async (ctx, req) => ({ ok: true, ctx, req })
+  })
+
+  const result = await authFac.mfaHandler('totp', { foo: 1 })
+  t.is(result.ok, true)
+  t.ok(result.ctx)
+  t.alike(result.req, { foo: 1 })
+  await t.exception(
+    async () => await authFac.mfaHandler('notfound', {}),
+    /ERR_HANDLER_INVALID/
+  )
+})
+
+test('mfaCallbackHandler', async t => {
+  // No MFA required
+  authFac.authCallbackHandler = async () => 'token123'
+  const getUserMfaMethodsNone = async () => []
+  const resultNone = await authFac.mfaCallbackHandler('any', {}, getUserMfaMethodsNone)
+  t.alike(resultNone, { token: 'token123' })
+
+  // MFA required
+  authFac.authCallbackHandler = async () => 'token456'
+  const getUserMfaMethodsSome = async () => ['totp', 'passkey']
+  const resultSome = await authFac.mfaCallbackHandler('any', {}, getUserMfaMethodsSome)
+  t.ok(resultSome.csrf_token)
+  t.is(resultSome.mfa_required, true)
+  t.alike(resultSome.mfa_methods, ['totp', 'passkey'])
+  t.is(authFac._lru.get(resultSome.csrf_token), 'token456')
+
+  // Invalid getUserMfaMethods
+  authFac.authCallbackHandler = async () => 'token789'
+  await t.exception(
+    async () => await authFac.mfaCallbackHandler('any', {}, null),
+    /ERR_MFA_METHOD_HANDLER_INVALID/
+  )
+  await t.exception(
+    async () => await authFac.mfaCallbackHandler('any', {}, 123),
+    /ERR_MFA_METHOD_HANDLER_INVALID/
   )
 })
 
