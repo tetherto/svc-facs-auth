@@ -434,6 +434,28 @@ class AuthFacility extends Base {
       }
     ], cb)
   }
+
+  getUserIdFromToken(token) {
+    if (!token || typeof token !== 'string') {
+      return null
+    }
+
+    try {
+      const parts = token.split('-')
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (parts[i + 1].startsWith('roles:')) {
+          const userId = parseInt(parts[i], 10)
+          if (!isNaN(userId) && userId > 0) {
+            return userId
+          }
+          break
+        }
+      }
+      return null
+    } catch (err) {
+      return null
+    }
+  }
 }
 
 module.exports = AuthFacility

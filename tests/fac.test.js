@@ -406,6 +406,26 @@ test('cleanupTokens', async (t) => {
   t.is(authTokens.length, 0, 'token deleted')
 })
 
+test('getUserIdFromToken', async (t) => {
+  // Test valid token with roles
+  const token1 = 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-42-roles:user'
+  const userId1 = authFac.getUserIdFromToken(token1)
+  t.is(userId1, 42, 'correctly extracts userId from token with roles')
+  
+  // Test complex token with multiple hyphens
+  const token3 = 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-99-roles:admin:user:manager'
+  const userId3 = authFac.getUserIdFromToken(token3)
+  t.is(userId3, 99, 'correctly extracts userId from complex token')
+
+  // Test invalid tokens
+  t.is(authFac.getUserIdFromToken(null), null, 'returns null for null token')
+  t.is(authFac.getUserIdFromToken(undefined), null, 'returns null for undefined token')
+  t.is(authFac.getUserIdFromToken(123), null, 'returns null for non-string token')
+  t.is(authFac.getUserIdFromToken('invalid-token'), null, 'returns null for invalid token format')
+  t.is(authFac.getUserIdFromToken('pub:api:uuid-abc-roles:user'), null, 'returns null when userId is not a number')
+  t.is(authFac.getUserIdFromToken('pub:api:uuid-0-roles:user'), null, 'returns null when userId is zero')
+})
+
 test('getUser', async (t) => {
   await authFac.createUser({ email: 'test6@localhost', roles: ['user'] })
   const user = await authFac._sqlite.getAsync(
