@@ -411,7 +411,7 @@ test('getUserIdFromToken', async (t) => {
   const token1 = 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-42-roles:user'
   const userId1 = authFac.getUserIdFromToken(token1)
   t.is(userId1, 42, 'correctly extracts userId from token with roles')
-  
+
   // Test complex token with multiple hyphens
   const token3 = 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-99-roles:admin:user:manager'
   const userId3 = authFac.getUserIdFromToken(token3)

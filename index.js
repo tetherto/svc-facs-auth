@@ -435,7 +435,7 @@ class AuthFacility extends Base {
     ], cb)
   }
 
-  getUserIdFromToken(token) {
+  getUserIdFromToken (token) {
     if (!token || typeof token !== 'string') {
       return null
     }
