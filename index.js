@@ -253,7 +253,7 @@ class AuthFacility extends Base {
     }
 
     const [key, required] = perm.split(':')
-    const av = perms.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
+    const av = perms?.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
     return [...required].every(c => av.includes(c))
   }
 

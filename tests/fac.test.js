@@ -159,6 +159,14 @@ test('tokenPerms', async (t) => {
 
   t.is(authFac.tokenHasPerms(superAdminToken, 'jobs:r'), true, 'superadmin token has jobs:r')
   t.is(authFac.tokenHasPerms(superAdminToken, 'jobs:xyz'), true, 'superadmin token has unknown permission')
+
+  // check if it works for user with no permissions
+  const noPermsUserToken = await authFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['no_perms_user']
+  })
+  t.not(authFac.tokenHasPerms(noPermsUserToken, 'miner:r'), true, 'token does not have miner:r')  
 })
 
 test('updateUser', async (t) => {
