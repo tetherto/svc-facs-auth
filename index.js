@@ -3,7 +3,7 @@
 const async = require('async')
 const Base = require('bfx-facs-base')
 const TABLES = require('./lib/tables')
-const { dateNowSec, extractIps, isValidIp } = require('./lib/utils')
+const { dateNowSec, extractIps, isValidIp, parseSql } = require('./lib/utils')
 const { isEqual, isNil, isPlainObject, getArrayUniq, union } = require('@bitfinexcom/lib-js-util-base')
 const crypto = require('crypto')
 const bcrypt = require('bcrypt')
@@ -24,11 +24,13 @@ class AuthFacility extends Base {
     super.init()
   }
 
-  // test added
   async _initDb () {
     await async.mapSeries(TABLES, async (tbl) => {
       await this._sqlite.execAsync(tbl)
     })
+
+    // update existing db if schema updated
+    await this._updateDbFromSchema()
 
     const admin = this.conf.superAdmin
     if (!admin) {
@@ -49,6 +51,23 @@ class AuthFacility extends Base {
       await this._sqlite.runAsync(
         'UPDATE users SET email = ? WHERE id = 1', [admin]
       )
+    }
+  }
+
+  async _updateDbFromSchema () {
+    // parse tables schema
+    const schema = TABLES.map(sql => parseSql(sql))
+    for (const { table, columns } of schema) {
+      // Get existing columns from database
+      const existingColumns = await this._sqlite.allAsync(`PRAGMA table_info(${table})`)
+      const existingColumnNames = existingColumns.map(col => col.name)
+
+      // Check each expected column and add if missing
+      for (const [columnName, columnDef] of Object.entries(columns)) {
+        if (!existingColumnNames.includes(columnName)) {
+          await this._sqlite.execAsync(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`)
+        }
+      }
     }
   }
 
@@ -131,15 +150,7 @@ class AuthFacility extends Base {
     return newToken
   }
 
-  async createUser ({ email, roles = [], password = null }) {
-    const user = await this._sqlite.getAsync(
-      'SELECT * FROM users WHERE email = ? LIMIT 1', email
-    )
-
-    if (user) {
-      throw new Error('ERR_USER_EXISTS')
-    }
-
+  async createUser ({ email, name = null, roles = [], password = null }) {
     if (!email) {
       throw new Error('ERR_MISSING_EMAIL')
     }
@@ -148,14 +159,22 @@ class AuthFacility extends Base {
       throw new Error('ERR_MISSING_ROLES')
     }
 
+    const user = await this._sqlite.getAsync(
+      'SELECT * FROM users WHERE email = ? LIMIT 1', email
+    )
+
+    if (user) {
+      throw new Error('ERR_USER_EXISTS')
+    }
+
     password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
 
     await this._sqlite.runAsync(
-      'INSERT INTO users (email, roles, password) VALUES (?, ?, ?)', [email, JSON.stringify(roles), password]
+      'INSERT INTO users (email, name, roles, password) VALUES (?, ?, ?, ?)', [email, name, JSON.stringify(roles), password]
     )
   }
 
-  async updateUser ({ token, email, roles = [], password = null }) {
+  async updateUser ({ token, email, name = null, roles = [], password = null }) {
     let user = await this._getTokenFromDb(token)
     const userId = user?.userId
     if (!userId) {
@@ -172,13 +191,13 @@ class AuthFacility extends Base {
     password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
 
     await this._sqlite.runAsync(
-      'UPDATE users SET email = ?, roles = ?, password = ? WHERE id = ?', [email, JSON.stringify(roles), password, userId]
+      'UPDATE users SET email = ?, name = ?, roles = ?, password = ? WHERE id = ?', [email, name, JSON.stringify(roles), password, userId]
     )
 
     await this._deleteTokensOfUser(userId)
   }
 
-  async compareUser ({ token, email = null, roles = null, password = null }) {
+  async compareUser ({ token, email = null, name = null, roles = null, password = null }) {
     const user = await this._getTokenFromDb(token)
     const userId = user?.userId
     if (!userId) {
@@ -190,12 +209,13 @@ class AuthFacility extends Base {
       throw new Error('ERR_USER_NOT_FOUND')
     }
 
-    if (!email && !roles && !password) {
+    if (!email && !name && !roles && !password) {
       throw new Error('ERR_NO_FIELDS_PROVIDED')
     }
 
     const checks = [
       !email || dbUser.email === email,
+      !name || dbUser.name === name,
       !roles || isEqual(JSON.parse(dbUser.roles || '[]').sort(), roles.sort()),
       !password || await bcrypt.compare(password, dbUser.password)
     ]
@@ -236,13 +256,19 @@ class AuthFacility extends Base {
     }
   }
 
-  async resolveToken (token, ips) {
+  async resolveToken (token, ips, opts = {}) {
     const res = await this._getTokenFromDb(token)
     if (!res || res.created + res.ttl < dateNowSec() || !ips.some(ip => res.ips.includes(ip))) {
       return null
     }
 
+    if (opts?.updateLastActive) await this.updateLastActive(res.userId)
+
     return res
+  }
+
+  async updateLastActive (userId) {
+    await this._sqlite.runAsync('UPDATE users SET lastActiveAt = ? WHERE id = ?', [dateNowSec(), userId])
   }
 
   tokenHasPerms (token, perm) {
@@ -344,7 +370,7 @@ class AuthFacility extends Base {
       'SELECT * FROM users WHERE email = ? LIMIT 1', info.email
     )
     if (!user) {
-      throw new Error(' ERR_USER_INVALID')
+      throw new Error('ERR_USER_INVALID')
     }
 
     // check if password matches
@@ -368,6 +394,9 @@ class AuthFacility extends Base {
       roles.push(...JSON.parse(metadata.roles))
     }
 
+    // update last active timestamp for the user
+    await this.updateLastActive(userId)
+
     const token = await this.genToken({ ips, userId, ttl: this.conf.ttl, metadata, roles })
     return token
   }
@@ -378,7 +407,7 @@ class AuthFacility extends Base {
     }
 
     return await this._sqlite.getAsync(
-      'SELECT id, email, roles FROM users WHERE id = ? LIMIT 1', id
+      'SELECT id, email, name, roles, lastActiveAt FROM users WHERE id = ? LIMIT 1', id
     )
   }
 
@@ -388,12 +417,12 @@ class AuthFacility extends Base {
     }
 
     return await this._sqlite.getAsync(
-      'SELECT id, email, roles FROM users WHERE email = ? LIMIT 1', email
+      'SELECT id, email, name, roles, lastActiveAt FROM users WHERE email = ? LIMIT 1', email
     )
   }
 
   async listUsers () {
-    return await this._sqlite.allAsync('SELECT id, email, roles FROM users')
+    return await this._sqlite.allAsync('SELECT id, email, name, roles, lastActiveAt FROM users')
   }
 
   async deleteUser (id) {
