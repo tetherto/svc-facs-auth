@@ -154,8 +154,9 @@ Validates a token and checks if it is associated with the given IP addresses.
 - `ips<string[]>`: List of IP addresses to validate.
 
 ```javascript
-const token = await auth.resolveToken('some-token', ['192.168.1.1'])
+const user = await auth.resolveToken('some-token', ['192.168.1.1'])
 ```
+Note: User data (`user`) is coming from the `auth_token` table.
 
 ### `auth.tokenHasPerms(token, perm)`
 Checks if a token has the required permissions.
