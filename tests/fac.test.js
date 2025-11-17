@@ -41,13 +41,15 @@ test('init', async (t) => {
     id: 1,
     email: 'superadmin@localhost',
     roles: JSON.stringify(['*']),
-    password: null
+    password: null,
+    name: null,
+    lastActiveAt: null
   }, 'superAdmin created')
 })
 
 test('createUser', async (t) => {
   // create a user with correct email, roles as array of strings
-  await authFac.createUser({ email: 'test1@localhost', roles: ['user'] })
+  await authFac.createUser({ email: 'test1@localhost', name: 'Test User 1', roles: ['user'] })
 
   const user = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test1@localhost'
@@ -57,7 +59,9 @@ test('createUser', async (t) => {
     id: 2,
     email: 'test1@localhost',
     roles: JSON.stringify(['user']),
-    password: null
+    password: null,
+    name: 'Test User 1',
+    lastActiveAt: null
   }, 'valid user created')
 
   // create a user with missing email
@@ -190,7 +194,7 @@ test('updateUser', async (t) => {
     'SELECT * FROM users WHERE email = ?', 'test3@localhost'
   )
 
-  t.alike(omit(user, ['password']), {
+  t.alike(omit(user, ['password', 'name', 'lastActiveAt']), {
     id: 2,
     email: 'test3@localhost',
     roles: JSON.stringify(['user'])
@@ -211,7 +215,7 @@ test('updateUser', async (t) => {
 test('compareUser', async (t) => {
   // Create a user with email, roles, and password
   const password = 'securepassword'
-  await authFac.createUser({ email: 'compare@localhost', roles: ['user'], password })
+  await authFac.createUser({ email: 'compare@localhost', name: 'Test User', roles: ['user'], password })
 
   // Fetch the user from the database
   const user = await authFac._sqlite.getAsync(
@@ -237,6 +241,20 @@ test('compareUser', async (t) => {
     await authFac.compareUser({ token, email: 'wrong@localhost' }),
     false,
     'compareUser should return false for incorrect email'
+  )
+
+  // Test with correct name
+  t.is(
+    await authFac.compareUser({ token, name: 'Test User' }),
+    true,
+    'compareUser should return true for matching name'
+  )
+
+  // Test with incorrect name
+  t.is(
+    await authFac.compareUser({ token, name: 'Wrong User' }),
+    false,
+    'compareUser should return false for incorrect name'
   )
 
   // Test with correct roles
@@ -330,7 +348,7 @@ test('authHandlers', async (t) => {
   // create a token with incorrect email and password
   await t.exception(
     async () => await authFac.authCallbackHandler('password', { email: 'test100@localhost', password: 'incorrect', ip: '127.0.0.1' }),
-    / ERR_USER_INVALID/,
+    /ERR_USER_INVALID/,
     'throw error on incorrect email and password'
   )
 })
@@ -414,7 +432,9 @@ test('getUser', async (t) => {
   const expected = {
     id: user.id,
     email: user.email,
-    roles: user.roles
+    name: user.name,
+    roles: user.roles,
+    lastActiveAt: user.lastActiveAt
   }
 
   let res = await authFac.getUserById(user.id)
@@ -472,4 +492,20 @@ test('deleteUser', async (t) => {
 
   const resolvedToken = await authFac.resolveToken(tokens[0])
   t.is(resolvedToken, null, 'cannot resolve old token after user delete')
+})
+
+test('updateLastActive', async (t) => {
+  await authFac.createUser({ email: 'test@localhost', roles: ['user'] })
+  const user = await authFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'test@localhost'
+  )
+
+  const userBefore = await authFac.getUserById(user.id)
+  t.is(userBefore.lastActiveAt, null, 'lastActiveAt is initially null')
+
+  await authFac.updateLastActive(user.id)
+
+  const userAfter = await authFac.getUserById(user.id)
+  t.ok(userAfter.lastActiveAt, 'lastActiveAt is set after update')
+  t.is(typeof userAfter.lastActiveAt, 'number', 'lastActiveAt is a number')
 })
