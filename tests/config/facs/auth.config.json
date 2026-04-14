@@ -2,6 +2,7 @@
   "a0": {
     "ttl": 3000,
     "superAdmin": "superadmin@localhost",
+    "jwtSecret": "test-secret-do-not-use-in-prod",
     "roles": {
       "admin": [
         "miner:rw",
