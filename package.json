@@ -1,6 +1,6 @@
 {
   "name": "svc-facs-auth",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A facility that handles local authentication using sqlite db",
   "main": "index.js",
   "scripts": {
