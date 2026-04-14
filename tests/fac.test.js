@@ -528,7 +528,6 @@ test('jwtSecret missing throws', async (t) => {
 })
 
 test('_assertTtlCoveredByLru rejects ttl > lru.maxAge', (t) => {
-  // simulate a real LRU by attaching a cache with maxAge (test helper has none)
   const originalLru = authFac._lru
   const originalTtl = authFac.conf.ttl
 

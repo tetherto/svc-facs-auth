@@ -453,8 +453,6 @@ class AuthFacility extends Base {
   }
 
   _assertTtlCoveredByLru () {
-    // The JTI denylist reuses the injected LRU; if the LRU evicts a denylisted
-    // jti before the token's own exp, the revoked token starts passing again.
     // Enforce ttl <= lru.maxAge at boot so misconfiguration fails loudly.
     const lruMaxAgeMs = this._lru?.cache?.maxAge
     if (!lruMaxAgeMs) return
