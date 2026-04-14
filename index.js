@@ -452,11 +452,24 @@ class AuthFacility extends Base {
     return true
   }
 
+  _assertTtlCoveredByLru () {
+    // The JTI denylist reuses the injected LRU; if the LRU evicts a denylisted
+    // jti before the token's own exp, the revoked token starts passing again.
+    // Enforce ttl <= lru.maxAge at boot so misconfiguration fails loudly.
+    const lruMaxAgeMs = this._lru?.cache?.maxAge
+    if (!lruMaxAgeMs) return
+    const ttlSec = this.conf.ttl || 300
+    if (ttlSec * 1000 > lruMaxAgeMs) {
+      throw new Error(`ERR_TTL_EXCEEDS_LRU_MAXAGE: conf.ttl=${ttlSec}s exceeds lru.maxAge=${lruMaxAgeMs / 1000}s`)
+    }
+  }
+
   async _start (cb) {
     async.series([
       next => { super._start(next) },
       async () => {
         await this._initDb()
+        this._assertTtlCoveredByLru()
       }
     ], cb)
   }

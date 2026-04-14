@@ -526,3 +526,24 @@ test('jwtSecret missing throws', async (t) => {
 
   authFac.conf.jwtSecret = original
 })
+
+test('_assertTtlCoveredByLru rejects ttl > lru.maxAge', (t) => {
+  // simulate a real LRU by attaching a cache with maxAge (test helper has none)
+  const originalLru = authFac._lru
+  const originalTtl = authFac.conf.ttl
+
+  authFac._lru = { cache: { maxAge: 60_000 } } // 60 s
+  authFac.conf.ttl = 120 // 120 s — exceeds
+
+  t.exception(
+    () => authFac._assertTtlCoveredByLru(),
+    /ERR_TTL_EXCEEDS_LRU_MAXAGE/,
+    'throws when conf.ttl exceeds lru.maxAge'
+  )
+
+  authFac.conf.ttl = 60 // exactly equal is allowed
+  t.execution(() => authFac._assertTtlCoveredByLru(), 'boundary ttl === maxAge is accepted')
+
+  authFac._lru = originalLru
+  authFac.conf.ttl = originalTtl
+})
