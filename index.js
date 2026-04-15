@@ -26,6 +26,10 @@ class AuthFacility extends Base {
     super.init()
   }
 
+  get _isJwtMode () {
+    return !!this.conf.jwtSecret
+  }
+
   async _initDb () {
     await async.mapSeries(TABLES, async (tbl) => {
       await this._sqlite.execAsync(tbl)
@@ -82,10 +86,6 @@ class AuthFacility extends Base {
   }
 
   _validateTokenOpts ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
-    if (!this.conf.jwtSecret) {
-      throw new Error('ERR_JWT_SECRET_MISSING')
-    }
-
     if (!Array.isArray(ips) || !ips.length || !ips.every(ip => isValidIp(ip))) {
       throw new Error('ERR_IPS_INVALID')
     }
@@ -117,7 +117,12 @@ class AuthFacility extends Base {
 
   async genToken ({ ips, userId, ttl = this.conf.ttl || 300, metadata = {}, pfx = 'pub', scope = 'api', roles = [] }) {
     this._validateTokenOpts({ ips, userId, ttl, metadata, pfx, scope, roles })
+    return this._isJwtMode
+      ? this._genJwtToken({ ips, userId, ttl, metadata, pfx, scope, roles })
+      : this._genLegacyToken({ ips, userId, ttl, metadata, pfx, scope, roles })
+  }
 
+  _genJwtToken ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
     const dedupedIps = getArrayUniq(ips)
     const jti = crypto.randomUUID()
     const token = jwt.sign(
@@ -132,13 +137,34 @@ class AuthFacility extends Base {
     return token
   }
 
+  async _genLegacyToken ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
+    const now = dateNowSec()
+
+    let strRoles = ''
+    if (roles.length) {
+      strRoles = '-roles:' + roles.join(':')
+    }
+    const token = `${pfx}:${scope}:${crypto.randomUUID()}-${userId}${strRoles}`
+
+    await this._sqlite.runAsync(
+      'INSERT INTO auth_tokens(token, userId, ips, metadata, created, ttl) VALUES (?, ?, ?, ?, ?, ?)',
+      [token, userId, JSON.stringify(getArrayUniq(ips)), JSON.stringify(metadata), now, ttl]
+    )
+
+    return token
+  }
+
   async regenerateToken ({ oldToken, ips = null, pfx = 'pub', scope = 'api', roles = [] }) {
     const old = await this._verifyToken(oldToken)
     if (!old) {
       throw new Error('ERR_OLD_TOKEN_INVALID')
     }
 
-    if (!roles.every(c => old.roles.includes(c))) {
+    const oldRoles = this._isJwtMode
+      ? (old.roles || [])
+      : _parseLegacyRoles(oldToken)
+
+    if (!roles.every(c => oldRoles.includes(c))) {
       throw new Error('ERR_ROLES_INVALID')
     }
 
@@ -198,7 +224,11 @@ class AuthFacility extends Base {
       'UPDATE users SET email = ?, name = ?, roles = ?, password = ? WHERE id = ?', [email, name, JSON.stringify(roles), password, userId]
     )
 
-    this._revokeAllTokensOfUser(userId)
+    if (this._isJwtMode) {
+      this._revokeAllTokensOfUser(userId)
+    } else {
+      await this._deleteTokensOfUser(userId)
+    }
   }
 
   async compareUser ({ token, email = null, name = null, roles = null, password = null }) {
@@ -241,9 +271,10 @@ class AuthFacility extends Base {
     return Object.entries(perms).map(([key, val]) => `${key}:${[...val].sort().join('')}`)
   }
 
-  async getTokenPerms (token) {
-    const verified = await this._verifyToken(token)
-    const rawRoles = verified?.roles || []
+  getTokenPerms (token) {
+    const rawRoles = this._isJwtMode
+      ? (this._verifyJwtToken(token)?.roles || [])
+      : _parseLegacyRoles(token)
 
     const roles = rawRoles.map(c => {
       if (c === '*') {
@@ -260,9 +291,9 @@ class AuthFacility extends Base {
 
   async resolveToken (token, ips, opts = {}) {
     const res = await this._verifyToken(token)
-    if (!res || !getArrayHasIntersect(ips, res.ips)) {
-      return null
-    }
+    if (!res) return null
+    if (!this._isJwtMode && res.created + res.ttl < dateNowSec()) return null
+    if (!getArrayHasIntersect(ips, res.ips)) return null
 
     if (opts?.updateLastActive) await this.updateLastActive(res.userId)
 
@@ -273,8 +304,8 @@ class AuthFacility extends Base {
     await this._sqlite.runAsync('UPDATE users SET lastActiveAt = ? WHERE id = ?', [dateNowSec(), userId])
   }
 
-  async tokenHasPerms (token, perm) {
-    const { superadmin, perms } = await this.getTokenPerms(token)
+  tokenHasPerms (token, perm) {
+    const { superadmin, perms } = this.getTokenPerms(token)
 
     if (superadmin) {
       return true
@@ -286,6 +317,12 @@ class AuthFacility extends Base {
   }
 
   async _verifyToken (token) {
+    return this._isJwtMode
+      ? this._verifyJwtToken(token)
+      : await this._getTokenFromDb(token)
+  }
+
+  _verifyJwtToken (token) {
     if (typeof token !== 'string') return null
     try {
       const decoded = jwt.verify(token, this.conf.jwtSecret, { algorithms: ['HS256'] })
@@ -302,6 +339,29 @@ class AuthFacility extends Base {
     }
   }
 
+  async _getTokenFromDb (token) {
+    if (typeof token !== 'string' || /^[a-zA-Z0-9:\-]$/.test(token)) { //eslint-disable-line
+      return null
+    }
+
+    const ckey = `gotokens:${token}`
+    let res = this._lru.get(ckey)
+
+    if (!res) {
+      res = await this._sqlite.getAsync(
+        'SELECT * FROM auth_tokens WHERE token = ? LIMIT 1',
+        token)
+
+      if (res) {
+        res.metadata = res.metadata ? JSON.parse(res.metadata) : {}
+        res.ips = JSON.parse(res.ips)
+        this._lru.set(ckey, res)
+      }
+    }
+
+    return res
+  }
+
   _revokeAllTokensOfUser (userId) {
     const jtiMap = this._userJtis.get(userId)
     if (!jtiMap) return
@@ -311,13 +371,32 @@ class AuthFacility extends Base {
     this._userJtis.delete(userId)
   }
 
+  async _deleteTokensOfUser (id) {
+    const tokens = await this._sqlite.allAsync(
+      'SELECT * from auth_tokens WHERE userId=?', [id]
+    )
+
+    tokens.forEach(({ token }) => this._lru.remove(`gotokens:${token}`))
+
+    await this._sqlite.allAsync(
+      'DELETE from auth_tokens WHERE userId=?', [id]
+    )
+  }
+
   async cleanupTokens () {
-    const now = dateNowSec()
-    for (const [userId, jtiMap] of this._userJtis) {
-      for (const [jti, expAt] of jtiMap) {
-        if (expAt < now) jtiMap.delete(jti)
+    if (this._isJwtMode) {
+      const now = dateNowSec()
+      for (const [userId, jtiMap] of this._userJtis) {
+        for (const [jti, expAt] of jtiMap) {
+          if (expAt < now) jtiMap.delete(jti)
+        }
+        if (jtiMap.size === 0) this._userJtis.delete(userId)
       }
-      if (jtiMap.size === 0) this._userJtis.delete(userId)
+    } else {
+      await this._sqlite.runAsync(
+        'DELETE FROM auth_tokens WHERE created + ttl < ?',
+        dateNowSec()
+      )
     }
   }
 
@@ -394,8 +473,15 @@ class AuthFacility extends Base {
     const userId = user.id
 
     if (info.password) delete info.password
-    const { password: _pwd, ...safeUser } = user
-    const metadata = { ...info, ...safeUser }
+
+    let metadata
+    if (this._isJwtMode) {
+      const { password: _pwd, ...safeUser } = user
+      metadata = { ...info, ...safeUser }
+    } else {
+      metadata = { ...info, ...user }
+    }
+
     const ips = extractIps(req)
 
     const roles = []
@@ -447,12 +533,17 @@ class AuthFacility extends Base {
       'DELETE from users WHERE id=?', [id]
     )
 
-    this._revokeAllTokensOfUser(id)
+    if (this._isJwtMode) {
+      this._revokeAllTokensOfUser(id)
+    } else {
+      await this._deleteTokensOfUser(id)
+    }
 
     return true
   }
 
   _assertTtlCoveredByLru () {
+    if (!this._isJwtMode) return
     // Enforce ttl <= lru.maxAge at boot so misconfiguration fails loudly.
     const lruMaxAgeMs = this._lru?.cache?.maxAge
     if (!lruMaxAgeMs) return
@@ -471,6 +562,13 @@ class AuthFacility extends Base {
       }
     ], cb)
   }
+}
+
+function _parseLegacyRoles (token) {
+  if (typeof token !== 'string') return []
+  const rolesMatch = token.match(/(roles:[a-z_*:]*)/)
+  if (!rolesMatch || !rolesMatch[1]) return []
+  return rolesMatch[1].replace('roles:', '').split(':').filter(Boolean)
 }
 
 module.exports = AuthFacility

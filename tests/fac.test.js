@@ -510,18 +510,21 @@ test('jwt tampering rejected', async (t) => {
   t.is(resolvedSig, null, 'tampered signature is rejected')
 })
 
-test('jwtSecret missing throws', async (t) => {
+test('legacy mode activates when jwtSecret is absent', async (t) => {
   const original = authFac.conf.jwtSecret
-  authFac.conf.jwtSecret = null
+  authFac.conf.jwtSecret = undefined
 
-  await t.exception(
-    async () => await authFac.genToken({
-      ips: ['127.0.0.1'],
-      userId: 2,
-      roles: ['user']
-    }),
-    /ERR_JWT_SECRET_MISSING/,
-    'throws when jwtSecret is missing'
+  t.is(authFac._isJwtMode, false, '_isJwtMode false when jwtSecret is absent')
+
+  const token = await authFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 2,
+    roles: ['user']
+  })
+
+  t.ok(
+    token.match(/^pub:api:[a-z0-9-]+-2-roles:user$/),
+    'genToken returns legacy plaintext format'
   )
 
   authFac.conf.jwtSecret = original
@@ -545,4 +548,150 @@ test('_assertTtlCoveredByLru rejects ttl > lru.maxAge', (t) => {
 
   authFac._lru = originalLru
   authFac.conf.ttl = originalTtl
+})
+
+// ---------- legacy mode (conf.jwtSecret absent) ----------
+
+const legacySqliteFac = require('./helper/sqlite.fac')()
+const legacyLruFac = require('./helper/lru.fac')()
+const legacyAuthFac = new Fac(caller, {
+  sqlite: legacySqliteFac,
+  ns: 'a0',
+  lru: legacyLruFac
+}, { env: 'test' })
+
+test('legacy: init', async (t) => {
+  await new Promise((resolve) => legacyAuthFac.start(resolve))
+  legacyAuthFac.conf.jwtSecret = undefined
+  t.is(legacyAuthFac._isJwtMode, false, 'legacy facility is not in JWT mode')
+})
+
+test('legacy: createToken produces plaintext format and row in auth_tokens', async (t) => {
+  const token = await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['admin']
+  })
+
+  t.ok(token.match(/^pub:api:[a-z0-9-]+-1-roles:admin$/), 'plaintext token format')
+
+  const row = await legacyAuthFac._sqlite.getAsync(
+    'SELECT * FROM auth_tokens WHERE token = ?', token
+  )
+  t.ok(row, 'row inserted into auth_tokens')
+  t.is(row.userId, 1, 'row.userId matches')
+})
+
+test('legacy: resolveToken round-trips from sqlite', async (t) => {
+  const token = await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['admin']
+  })
+
+  const res = await legacyAuthFac.resolveToken(token, ['127.0.0.1'])
+  t.ok(res, 'token resolved')
+  t.is(res.userId, 1, 'userId on resolved shape')
+  t.alike(res.ips, ['127.0.0.1'], 'ips on resolved shape')
+})
+
+test('legacy: regenerateToken downscales via regex role parse', async (t) => {
+  const oldToken = await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['admin', 'site_manager']
+  })
+
+  const newToken = await legacyAuthFac.regenerateToken({ oldToken, roles: ['admin'] })
+  t.ok(newToken.match(/^pub:api:[a-z0-9-]+-1-roles:admin$/), 'downscaled plaintext token')
+
+  await t.exception(
+    async () => await legacyAuthFac.regenerateToken({ oldToken, roles: ['user'] }),
+    /ERR_ROLES_INVALID/,
+    'rejects roles not in the old token'
+  )
+})
+
+test('legacy: getTokenPerms is sync and parses roles from the token substring', async (t) => {
+  const token = await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['admin']
+  })
+
+  const perms = legacyAuthFac.getTokenPerms(token)
+  t.is(typeof perms?.then, 'undefined', 'getTokenPerms returns synchronously (not a promise)')
+  t.is(perms.superadmin, false, 'admin role is not superadmin')
+  t.ok(Array.isArray(perms.perms), 'perms is an array')
+})
+
+test('legacy: tokenHasPerms is sync and checks the role-derived perms', async (t) => {
+  const token = await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['admin']
+  })
+
+  const hasMinerRw = legacyAuthFac.tokenHasPerms(token, 'miner:rw')
+  t.is(typeof hasMinerRw, 'boolean', 'tokenHasPerms returns synchronously (boolean)')
+  t.is(hasMinerRw, true, 'admin has miner:rw')
+  t.is(legacyAuthFac.tokenHasPerms(token, 'jobs:r'), false, 'admin does not have jobs:r')
+})
+
+test('legacy: updateUser deletes auth_tokens rows for the user', async (t) => {
+  await legacyAuthFac.createUser({ email: 'legacy-update@localhost', roles: ['admin'] })
+  const user = await legacyAuthFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'legacy-update@localhost'
+  )
+
+  const token = await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: user.id,
+    roles: ['admin']
+  })
+
+  await legacyAuthFac.updateUser({ token, email: 'legacy-update2@localhost', roles: ['admin'] })
+
+  const rows = await legacyAuthFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
+  )
+  t.is(rows.length, 0, 'auth_tokens rows deleted for updated user')
+})
+
+test('legacy: deleteUser deletes auth_tokens rows for the user', async (t) => {
+  await legacyAuthFac.createUser({ email: 'legacy-delete@localhost', roles: ['admin'] })
+  const user = await legacyAuthFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'legacy-delete@localhost'
+  )
+
+  await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: user.id,
+    roles: ['admin']
+  })
+
+  await legacyAuthFac.deleteUser(user.id)
+
+  const rows = await legacyAuthFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
+  )
+  t.is(rows.length, 0, 'auth_tokens rows deleted for removed user')
+})
+
+test('legacy: cleanupTokens deletes expired rows from auth_tokens', async (t) => {
+  const token = await legacyAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['admin'],
+    ttl: 5
+  })
+
+  let rows = await legacyAuthFac._sqlite.allAsync('SELECT * FROM auth_tokens WHERE token = ?', token)
+  t.is(rows.length, 1, 'row present')
+
+  await promiseSleep(6000)
+  await legacyAuthFac.cleanupTokens()
+
+  rows = await legacyAuthFac._sqlite.allAsync('SELECT * FROM auth_tokens WHERE token = ?', token)
+  t.is(rows.length, 0, 'expired row deleted')
 })
