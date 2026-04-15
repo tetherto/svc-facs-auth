@@ -4,7 +4,6 @@ const test = require('brittle')
 const { promiseSleep } = require('@bitfinex/lib-js-util-promise')
 const { omit } = require('@bitfinexcom/lib-js-util-base')
 const async = require('async')
-const jwt = require('jsonwebtoken')
 
 const Fac = require('..')
 const caller = { ctx: { root: __dirname } }
@@ -18,8 +17,6 @@ const authFac = new Fac(caller, {
   lru: lruFac
 }, { env: 'test' })
 
-const verify = (token) => jwt.verify(token, authFac.conf.jwtSecret, { algorithms: ['HS256'] })
-
 test('init', async (t) => {
   // init the database
   await new Promise((resolve, _reject) => authFac.start(resolve))
@@ -29,6 +26,12 @@ test('init', async (t) => {
     'SELECT name FROM sqlite_master WHERE type="table" AND name="users"'
   )
   t.ok(usersTable, 'users table created')
+
+  // check if auth_tokens table is created
+  const authTokensTable = await authFac._sqlite.getAsync(
+    'SELECT name FROM sqlite_master WHERE type="table" AND name="auth_tokens"'
+  )
+  t.ok(authTokensTable, 'auth_tokens table created')
 
   // check if superadmin is created
   const superAdmin = await authFac._sqlite.getAsync(
@@ -84,43 +87,41 @@ test('createUser', async (t) => {
 })
 
 test('createToken', async (t) => {
+  // create a token with correct email and password
   const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['normal_user']
   })
 
-  const decoded = verify(token)
-  t.is(decoded.sub, 2, 'sub claim is userId')
-  t.alike(decoded.roles, ['normal_user'], 'roles claim matches')
-  t.alike(decoded.ips, ['127.0.0.1'], 'ips claim matches')
-  t.is(decoded.pfx, 'pub', 'pfx claim is pub')
-  t.is(decoded.scope, 'api', 'scope claim is api')
-  t.ok(decoded.jti, 'jti claim is present')
-  t.ok(decoded.iat, 'iat claim is present')
-  t.ok(decoded.exp, 'exp claim is present')
+  // Token should be like 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-2-roles:normal_user'
+  // match all except uuid with regex
+  t.is(token.match(/pub:api:[a-z0-9-]*-2-roles:normal_user/)[0], token, 'valid token created')
 })
 
 test('regenerateToken', async (t) => {
+  // create a token with correct email and password
   const oldToken = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user', 'site_manager']
   })
 
+  // regenerate token with correct old token
   const newToken = await authFac.regenerateToken({ oldToken, roles: ['user', 'site_manager'] })
 
-  const newDecoded = verify(newToken)
-  t.is(newDecoded.sub, 2, 'new token sub is userId')
-  t.alike(newDecoded.roles, ['user', 'site_manager'], 'new token roles match')
-  t.not(newDecoded.jti, verify(oldToken).jti, 'new token has a fresh jti')
+  // Token should be like 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-2-roles:user'
+  // match all except uuid with regex
+  t.is(newToken.match(/pub:api:[a-z0-9-]*-2-roles:user:site_manager/)[0], newToken, 'valid token regenerated')
 
+  // regenerate token with incorrect old token
   await t.exception(
     async () => await authFac.regenerateToken({ oldToken: 'incorrect' }),
     /ERR_OLD_TOKEN_INVALID/,
     'throw error on incorrect old token'
   )
 
+  // regenerate token with incorrect roles
   await t.exception(
     async () => await authFac.regenerateToken({ oldToken, roles: ['admin'] }),
     /ERR_ROLES_INVALID/,
@@ -133,6 +134,7 @@ test('regenerateToken', async (t) => {
     roles: ['*']
   })
 
+  // regenerate token with super admin role
   await t.execution(
     async () => await authFac.regenerateToken({ oldToken: oldSuperAdminToken, roles: ['*'] }),
     'valid super admin token regenerated'
@@ -148,9 +150,9 @@ test('tokenPerms', async (t) => {
   })
 
   // check if token has correct permissions
-  t.is(await authFac.tokenHasPerms(token, 'jobs:r'), true, 'token has jobs:r')
-  t.is(await authFac.tokenHasPerms(token, 'jobs:w'), true, 'token has jobs:w')
-  t.not(await authFac.tokenHasPerms(token, 'miner:r'), true, 'token does not have miner:r')
+  t.is(authFac.tokenHasPerms(token, 'jobs:r'), true, 'token has jobs:r')
+  t.is(authFac.tokenHasPerms(token, 'jobs:w'), true, 'token has jobs:w')
+  t.not(authFac.tokenHasPerms(token, 'miner:r'), true, 'token does not have miner:r')
 
   // check if superadmin token has all permissions
   const superAdminToken = await authFac.genToken({
@@ -159,30 +161,34 @@ test('tokenPerms', async (t) => {
     roles: ['*']
   })
 
-  t.is(await authFac.tokenHasPerms(superAdminToken, 'jobs:r'), true, 'superadmin token has jobs:r')
-  t.is(await authFac.tokenHasPerms(superAdminToken, 'jobs:xyz'), true, 'superadmin token has unknown permission')
+  t.is(authFac.tokenHasPerms(superAdminToken, 'jobs:r'), true, 'superadmin token has jobs:r')
+  t.is(authFac.tokenHasPerms(superAdminToken, 'jobs:xyz'), true, 'superadmin token has unknown permission')
 })
 
 test('updateUser', async (t) => {
   const userId = 2
-  const mintedTokens = []
-  const firstToken = await authFac.genToken({
+  // create a token with correct email and password
+  const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId,
     roles: ['user']
   })
-  mintedTokens.push(firstToken)
 
-  await async.times(3, async () => {
-    const tk = await authFac.genToken({
+  await async.times(3, async () => (
+    authFac.genToken({
       ips: ['127.0.0.1'],
       userId,
       roles: ['user']
     })
-    mintedTokens.push(tk)
-  })
+  ))
 
-  await authFac.updateUser({ token: firstToken, email: 'test3@localhost', roles: ['user'], password: 'newpassword' })
+  const tokens = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', userId
+  )
+
+  // update user with new email and password
+  // NOTE: password is hashed before storing
+  await authFac.updateUser({ token, email: 'test3@localhost', roles: ['user'], password: 'newpassword' })
 
   const user = await authFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'test3@localhost'
@@ -194,10 +200,16 @@ test('updateUser', async (t) => {
     roles: JSON.stringify(['user'])
   }, 'user updated correctly')
 
-  for (const tk of mintedTokens) {
-    const resolved = await authFac.resolveToken(tk, ['127.0.0.1'])
-    t.is(resolved, null, 'cannot resolve old token after user update')
-  }
+  const dbTokensAfterUpdate = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
+  )
+  t.is(dbTokensAfterUpdate.length, 0, 'tokens of user deleted from db')
+
+  const numCachedTokensAfterUpdate = tokens.map(token => authFac._lru.get(`gotokens:${token}`)).filter(token => !!token).length
+  t.is(numCachedTokensAfterUpdate, 0, 'tokens of user deleted from cache')
+
+  const resolvedToken = await authFac.resolveToken(tokens[0])
+  t.is(resolvedToken, null, 'cannot resolve old token after user update')
 })
 
 test('compareUser', async (t) => {
@@ -314,10 +326,10 @@ test('authHandlers', async (t) => {
 
   // create a token with correct email and password
   const token = await authFac.authCallbackHandler('password', { email: 'test3@localhost', password: 'newpassword', ip: '127.0.0.1' })
-  const decoded = verify(token)
-  t.is(decoded.sub, 2, 'password auth token has sub=2')
-  t.alike(decoded.roles, ['user'], 'password auth token has user role')
-  t.is(decoded.metadata.password, undefined, 'password is not leaked in token payload')
+
+  // Token should be like 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-2-roles:user'
+  // match all except uuid with regex
+  t.is(token.match(/pub:api:[a-z0-9-]*-2-roles:user/)[0], token, 'valid token created with password auth handler')
 
   // throw error in wrong password
   await t.exception(
@@ -328,9 +340,10 @@ test('authHandlers', async (t) => {
 
   // create a valid token with non-password auth handler
   const token2 = await authFac.authCallbackHandler('nonPassword', { email: 'test3@localhost', ip: '127.0.0.1' })
-  const decoded2 = verify(token2)
-  t.is(decoded2.sub, 2, 'nonPassword auth token has sub=2')
-  t.alike(decoded2.roles, ['user'], 'nonPassword auth token has user role')
+
+  // Token should be like 'pub:api:60f410c1-ea10-4ec8-95e0-bf06be87858d-2-roles:user'
+  // match all except uuid with regex
+  t.is(token2.match(/pub:api:[a-z0-9-]*-2-roles:user/)[0], token2, 'valid token created with non-password auth handler')
 
   // create a token with incorrect email and password
   await t.exception(
@@ -384,30 +397,31 @@ test('mfaCallbackHandler', async t => {
 })
 
 test('cleanupTokens', async (t) => {
-  const shortToken = await authFac.genToken({
+  // create a token with correct email and password
+  const token = await authFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
     roles: ['user'],
     ttl: 5
   })
-  const longToken = await authFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 2,
-    roles: ['user'],
-    ttl: 3000
-  })
 
-  const shortJti = verify(shortToken).jti
-  const longJti = verify(longToken).jti
+  // check if token is created
+  let authTokens = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE token = ?', token
+  )
 
-  t.ok(authFac._userJtis.get(2)?.has(shortJti), 'short jti tracked')
-  t.ok(authFac._userJtis.get(2)?.has(longJti), 'long jti tracked')
+  t.is(authTokens.length, 1, 'token created')
 
+  // wait 6s and cleanup tokens
   await promiseSleep(6000)
   await authFac.cleanupTokens()
 
-  t.absent(authFac._userJtis.get(2)?.has(shortJti), 'short jti swept after expiry')
-  t.ok(authFac._userJtis.get(2)?.has(longJti), 'long jti still tracked')
+  // check if token is deleted
+  authTokens = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE token = ?', token
+  )
+
+  t.is(authTokens.length, 0, 'token deleted')
 })
 
 test('getUser', async (t) => {
@@ -449,15 +463,15 @@ test('deleteUser', async (t) => {
     'SELECT * FROM users WHERE email = ?', 'test5@localhost'
   )
 
-  const mintedTokens = []
-  await async.times(3, async () => {
-    const tk = await authFac.genToken({
-      ips: ['127.0.0.1'],
-      userId: user.id,
-      roles: ['normal_user']
-    })
-    mintedTokens.push(tk)
-  })
+  await async.times(3, async () => authFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: user.id,
+    roles: ['normal_user']
+  }))
+
+  const tokens = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
+  )
 
   await t.execution(async () => await authFac.deleteUser(user.id), 'delete user is successful')
 
@@ -468,10 +482,16 @@ test('deleteUser', async (t) => {
   t.is(userToCheck, undefined, 'user is deleted')
   await t.exception(async () => await authFac.deleteUser(1), 'super user can not be deleted')
 
-  for (const tk of mintedTokens) {
-    const resolved = await authFac.resolveToken(tk, ['127.0.0.1'])
-    t.is(resolved, null, 'cannot resolve old token after user delete')
-  }
+  const dbTokensAfterDelete = await authFac._sqlite.allAsync(
+    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
+  )
+  t.is(dbTokensAfterDelete.length, 0, 'tokens of user deleted from db')
+
+  const numCachedTokensAfterDelete = tokens.map(token => authFac._lru.get(`gotokens:${token}`)).filter(token => !!token).length
+  t.is(numCachedTokensAfterDelete, 0, 'tokens of user deleted from cache')
+
+  const resolvedToken = await authFac.resolveToken(tokens[0])
+  t.is(resolvedToken, null, 'cannot resolve old token after user delete')
 })
 
 test('updateLastActive', async (t) => {
@@ -490,208 +510,122 @@ test('updateLastActive', async (t) => {
   t.is(typeof userAfter.lastActiveAt, 'number', 'lastActiveAt is a number')
 })
 
-test('jwt tampering rejected', async (t) => {
-  const token = await authFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 2,
-    roles: ['user']
-  })
+// ---------- JWT mode (conf.jwtSecret set) ----------
 
-  const [header, payload, signature] = token.split('.')
+const jwt = require('jsonwebtoken')
+const JWT_SECRET = 'test-secret-do-not-use-in-prod'
 
-  const tamperedPayload = payload.slice(0, -1) + (payload.slice(-1) === 'A' ? 'B' : 'A')
-  const tamperedToken = `${header}.${tamperedPayload}.${signature}`
+const jwtSqliteFac = require('./helper/sqlite.fac')()
+const jwtLruFac = require('./helper/lru.fac')()
+const jwtAuthFac = new Fac(caller, {
+  sqlite: jwtSqliteFac,
+  ns: 'a0',
+  lru: jwtLruFac
+}, { env: 'test' })
 
-  const resolved = await authFac.resolveToken(tamperedToken, ['127.0.0.1'])
-  t.is(resolved, null, 'tampered token is rejected')
-
-  const tamperedSigToken = `${header}.${payload}.${signature.slice(0, -1)}X`
-  const resolvedSig = await authFac.resolveToken(tamperedSigToken, ['127.0.0.1'])
-  t.is(resolvedSig, null, 'tampered signature is rejected')
+test('jwt: init with jwtSecret set', async (t) => {
+  await new Promise((resolve) => jwtAuthFac.start(resolve))
+  jwtAuthFac.conf.jwtSecret = JWT_SECRET
+  t.is(jwtAuthFac._isJwtMode, true, 'jwt mode active')
 })
 
-test('legacy mode activates when jwtSecret is absent', async (t) => {
-  const original = authFac.conf.jwtSecret
-  authFac.conf.jwtSecret = undefined
-
-  t.is(authFac._isJwtMode, false, '_isJwtMode false when jwtSecret is absent')
-
-  const token = await authFac.genToken({
+test('jwt: genToken returns HS256 JWT with expected claims', async (t) => {
+  const token = await jwtAuthFac.genToken({
     ips: ['127.0.0.1'],
     userId: 2,
-    roles: ['user']
+    roles: ['normal_user']
   })
 
-  t.ok(
-    token.match(/^pub:api:[a-z0-9-]+-2-roles:user$/),
-    'genToken returns legacy plaintext format'
+  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })
+  t.is(decoded.sub, 2, 'sub claim is userId')
+  t.alike(decoded.roles, ['normal_user'], 'roles claim matches')
+  t.alike(decoded.ips, ['127.0.0.1'], 'ips claim matches')
+  t.ok(decoded.jti, 'jti claim present')
+})
+
+test('jwt: resolveToken accepts a valid token and rejects a tampered one', async (t) => {
+  const token = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 2,
+    roles: ['normal_user']
+  })
+
+  const res = await jwtAuthFac.resolveToken(token, ['127.0.0.1'])
+  t.ok(res, 'valid token resolves')
+  t.is(res.userId, 2, 'resolved shape has userId')
+
+  const [h, p, s] = token.split('.')
+  const tampered = `${h}.${p.slice(0, -1)}${p.slice(-1) === 'A' ? 'B' : 'A'}.${s}`
+  t.is(await jwtAuthFac.resolveToken(tampered, ['127.0.0.1']), null, 'tampered token rejected')
+})
+
+test('jwt: updateUser revokes prior tokens via the LRU denylist', async (t) => {
+  await jwtAuthFac.createUser({ email: 'jwt-user@localhost', roles: ['normal_user'] })
+  const user = await jwtAuthFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'jwt-user@localhost'
   )
 
-  authFac.conf.jwtSecret = original
+  const tokens = []
+  for (let i = 0; i < 3; i++) {
+    tokens.push(await jwtAuthFac.genToken({
+      ips: ['127.0.0.1'],
+      userId: user.id,
+      roles: ['normal_user']
+    }))
+  }
+
+  await jwtAuthFac.updateUser({
+    token: tokens[0],
+    email: 'jwt-user2@localhost',
+    roles: ['normal_user']
+  })
+
+  for (const tk of tokens) {
+    t.is(await jwtAuthFac.resolveToken(tk, ['127.0.0.1']), null, 'revoked after update')
+  }
 })
 
-test('_assertTtlCoveredByLru rejects ttl > lru.maxAge', (t) => {
-  const originalLru = authFac._lru
-  const originalTtl = authFac.conf.ttl
+test('jwt: cleanupTokens sweeps expired jtis from _userJtis', async (t) => {
+  const short = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['*'],
+    ttl: 5
+  })
+  const long = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['*'],
+    ttl: 3000
+  })
 
-  authFac._lru = { cache: { maxAge: 60_000 } } // 60 s
-  authFac.conf.ttl = 120 // 120 s — exceeds
+  const shortJti = jwt.verify(short, JWT_SECRET).jti
+  const longJti = jwt.verify(long, JWT_SECRET).jti
+  t.ok(jwtAuthFac._userJtis.get(1)?.has(shortJti), 'short jti tracked')
+  t.ok(jwtAuthFac._userJtis.get(1)?.has(longJti), 'long jti tracked')
 
+  await promiseSleep(6000)
+  await jwtAuthFac.cleanupTokens()
+
+  t.absent(jwtAuthFac._userJtis.get(1)?.has(shortJti), 'short jti swept')
+  t.ok(jwtAuthFac._userJtis.get(1)?.has(longJti), 'long jti still tracked')
+})
+
+test('jwt: _assertTtlCoveredByLru rejects ttl > lru.maxAge', (t) => {
+  const originalLru = jwtAuthFac._lru
+  const originalTtl = jwtAuthFac.conf.ttl
+
+  jwtAuthFac._lru = { cache: { maxAge: 60_000 } }
+  jwtAuthFac.conf.ttl = 120
   t.exception(
-    () => authFac._assertTtlCoveredByLru(),
+    () => jwtAuthFac._assertTtlCoveredByLru(),
     /ERR_TTL_EXCEEDS_LRU_MAXAGE/,
     'throws when conf.ttl exceeds lru.maxAge'
   )
 
-  authFac.conf.ttl = 60 // exactly equal is allowed
-  t.execution(() => authFac._assertTtlCoveredByLru(), 'boundary ttl === maxAge is accepted')
+  jwtAuthFac.conf.ttl = 60
+  t.execution(() => jwtAuthFac._assertTtlCoveredByLru(), 'boundary ttl === maxAge accepted')
 
-  authFac._lru = originalLru
-  authFac.conf.ttl = originalTtl
-})
-
-// ---------- legacy mode (conf.jwtSecret absent) ----------
-
-const legacySqliteFac = require('./helper/sqlite.fac')()
-const legacyLruFac = require('./helper/lru.fac')()
-const legacyAuthFac = new Fac(caller, {
-  sqlite: legacySqliteFac,
-  ns: 'a0',
-  lru: legacyLruFac
-}, { env: 'test' })
-
-test('legacy: init', async (t) => {
-  await new Promise((resolve) => legacyAuthFac.start(resolve))
-  legacyAuthFac.conf.jwtSecret = undefined
-  t.is(legacyAuthFac._isJwtMode, false, 'legacy facility is not in JWT mode')
-})
-
-test('legacy: createToken produces plaintext format and row in auth_tokens', async (t) => {
-  const token = await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 1,
-    roles: ['admin']
-  })
-
-  t.ok(token.match(/^pub:api:[a-z0-9-]+-1-roles:admin$/), 'plaintext token format')
-
-  const row = await legacyAuthFac._sqlite.getAsync(
-    'SELECT * FROM auth_tokens WHERE token = ?', token
-  )
-  t.ok(row, 'row inserted into auth_tokens')
-  t.is(row.userId, 1, 'row.userId matches')
-})
-
-test('legacy: resolveToken round-trips from sqlite', async (t) => {
-  const token = await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 1,
-    roles: ['admin']
-  })
-
-  const res = await legacyAuthFac.resolveToken(token, ['127.0.0.1'])
-  t.ok(res, 'token resolved')
-  t.is(res.userId, 1, 'userId on resolved shape')
-  t.alike(res.ips, ['127.0.0.1'], 'ips on resolved shape')
-})
-
-test('legacy: regenerateToken downscales via regex role parse', async (t) => {
-  const oldToken = await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 1,
-    roles: ['admin', 'site_manager']
-  })
-
-  const newToken = await legacyAuthFac.regenerateToken({ oldToken, roles: ['admin'] })
-  t.ok(newToken.match(/^pub:api:[a-z0-9-]+-1-roles:admin$/), 'downscaled plaintext token')
-
-  await t.exception(
-    async () => await legacyAuthFac.regenerateToken({ oldToken, roles: ['user'] }),
-    /ERR_ROLES_INVALID/,
-    'rejects roles not in the old token'
-  )
-})
-
-test('legacy: getTokenPerms is sync and parses roles from the token substring', async (t) => {
-  const token = await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 1,
-    roles: ['admin']
-  })
-
-  const perms = legacyAuthFac.getTokenPerms(token)
-  t.is(typeof perms?.then, 'undefined', 'getTokenPerms returns synchronously (not a promise)')
-  t.is(perms.superadmin, false, 'admin role is not superadmin')
-  t.ok(Array.isArray(perms.perms), 'perms is an array')
-})
-
-test('legacy: tokenHasPerms is sync and checks the role-derived perms', async (t) => {
-  const token = await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 1,
-    roles: ['admin']
-  })
-
-  const hasMinerRw = legacyAuthFac.tokenHasPerms(token, 'miner:rw')
-  t.is(typeof hasMinerRw, 'boolean', 'tokenHasPerms returns synchronously (boolean)')
-  t.is(hasMinerRw, true, 'admin has miner:rw')
-  t.is(legacyAuthFac.tokenHasPerms(token, 'jobs:r'), false, 'admin does not have jobs:r')
-})
-
-test('legacy: updateUser deletes auth_tokens rows for the user', async (t) => {
-  await legacyAuthFac.createUser({ email: 'legacy-update@localhost', roles: ['admin'] })
-  const user = await legacyAuthFac._sqlite.getAsync(
-    'SELECT * FROM users WHERE email = ?', 'legacy-update@localhost'
-  )
-
-  const token = await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: user.id,
-    roles: ['admin']
-  })
-
-  await legacyAuthFac.updateUser({ token, email: 'legacy-update2@localhost', roles: ['admin'] })
-
-  const rows = await legacyAuthFac._sqlite.allAsync(
-    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
-  )
-  t.is(rows.length, 0, 'auth_tokens rows deleted for updated user')
-})
-
-test('legacy: deleteUser deletes auth_tokens rows for the user', async (t) => {
-  await legacyAuthFac.createUser({ email: 'legacy-delete@localhost', roles: ['admin'] })
-  const user = await legacyAuthFac._sqlite.getAsync(
-    'SELECT * FROM users WHERE email = ?', 'legacy-delete@localhost'
-  )
-
-  await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: user.id,
-    roles: ['admin']
-  })
-
-  await legacyAuthFac.deleteUser(user.id)
-
-  const rows = await legacyAuthFac._sqlite.allAsync(
-    'SELECT * FROM auth_tokens WHERE userId = ?', user.id
-  )
-  t.is(rows.length, 0, 'auth_tokens rows deleted for removed user')
-})
-
-test('legacy: cleanupTokens deletes expired rows from auth_tokens', async (t) => {
-  const token = await legacyAuthFac.genToken({
-    ips: ['127.0.0.1'],
-    userId: 1,
-    roles: ['admin'],
-    ttl: 5
-  })
-
-  let rows = await legacyAuthFac._sqlite.allAsync('SELECT * FROM auth_tokens WHERE token = ?', token)
-  t.is(rows.length, 1, 'row present')
-
-  await promiseSleep(6000)
-  await legacyAuthFac.cleanupTokens()
-
-  rows = await legacyAuthFac._sqlite.allAsync('SELECT * FROM auth_tokens WHERE token = ?', token)
-  t.is(rows.length, 0, 'expired row deleted')
+  jwtAuthFac._lru = originalLru
+  jwtAuthFac.conf.ttl = originalTtl
 })
