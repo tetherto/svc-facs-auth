@@ -536,11 +536,20 @@ test('jwt: genToken returns HS256 JWT with expected claims', async (t) => {
     roles: ['normal_user']
   })
 
-  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })
+  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'svc-facs-auth' })
   t.is(decoded.sub, 2, 'sub claim is userId')
+  t.is(decoded.iss, 'svc-facs-auth', 'iss claim is default issuer')
   t.alike(decoded.roles, ['normal_user'], 'roles claim matches')
   t.alike(decoded.ips, ['127.0.0.1'], 'ips claim matches')
   t.ok(decoded.jti, 'jti claim present')
+  t.ok(decoded.exp, 'exp claim present')
+  t.ok(decoded.iat, 'iat claim present')
+
+  t.exception(
+    () => jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'other' }),
+    /jwt issuer invalid/,
+    'rejects verification with mismatched issuer'
+  )
 })
 
 test('jwt: resolveToken accepts a valid token and rejects a tampered one', async (t) => {
@@ -585,30 +594,27 @@ test('jwt: updateUser revokes prior tokens via the LRU denylist', async (t) => {
   }
 })
 
-test('jwt: cleanupTokens sweeps expired jtis from _userJtis', async (t) => {
-  const short = await jwtAuthFac.genToken({
+test('jwt: genToken tracks jti in LRU user-jtis entry; cleanupTokens is a no-op', async (t) => {
+  const a = await jwtAuthFac.genToken({
     ips: ['127.0.0.1'],
     userId: 1,
     roles: ['*'],
     ttl: 5
   })
-  const long = await jwtAuthFac.genToken({
+  const b = await jwtAuthFac.genToken({
     ips: ['127.0.0.1'],
     userId: 1,
     roles: ['*'],
     ttl: 3000
   })
 
-  const shortJti = jwt.verify(short, JWT_SECRET).jti
-  const longJti = jwt.verify(long, JWT_SECRET).jti
-  t.ok(jwtAuthFac._userJtis.get(1)?.has(shortJti), 'short jti tracked')
-  t.ok(jwtAuthFac._userJtis.get(1)?.has(longJti), 'long jti tracked')
+  const aJti = jwt.verify(a, JWT_SECRET, { issuer: 'svc-facs-auth' }).jti
+  const bJti = jwt.verify(b, JWT_SECRET, { issuer: 'svc-facs-auth' }).jti
+  const jtis = jwtAuthFac._lru.peek('user-jtis:1')
+  t.ok(jtis?.has(aJti), 'first jti tracked in LRU')
+  t.ok(jtis?.has(bJti), 'second jti tracked in LRU')
 
-  await promiseSleep(6000)
-  await jwtAuthFac.cleanupTokens()
-
-  t.absent(jwtAuthFac._userJtis.get(1)?.has(shortJti), 'short jti swept')
-  t.ok(jwtAuthFac._userJtis.get(1)?.has(longJti), 'long jti still tracked')
+  await t.execution(async () => await jwtAuthFac.cleanupTokens(), 'cleanupTokens no-ops in jwt mode')
 })
 
 test('jwt: _assertTtlCoveredByLru rejects ttl > lru.maxAge', (t) => {
