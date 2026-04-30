@@ -1,6 +1,6 @@
 {
   "name": "svc-facs-auth",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A facility that handles local authentication using sqlite db",
   "main": "index.js",
   "scripts": {
@@ -28,9 +28,9 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@bitfinexcom/lib-js-util-base": "git+https://github.com/bitfinexcom/lib-js-util-base.git",
+    "@bitfinex/bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git",
     "async": "3.2.5",
-    "bcrypt": "5.1.1",
-    "bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git"
+    "bcrypt": "5.1.1"
   },
   "devDependencies": {
     "@bitfinex/lib-js-util-promise": "git+https://github.com/bitfinexcom/lib-js-util-promise",
