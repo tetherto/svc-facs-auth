@@ -27,8 +27,8 @@
   ],
   "license": "Apache-2.0",
   "dependencies": {
+    "@bitfinex/bfx-facs-base": "^1.1.0",
     "@bitfinexcom/lib-js-util-base": "git+https://github.com/bitfinexcom/lib-js-util-base.git",
-    "@bitfinex/bfx-facs-base": "git+https://github.com/bitfinexcom/bfx-facs-base.git",
     "async": "3.2.5",
     "bcrypt": "5.1.1"
   },
