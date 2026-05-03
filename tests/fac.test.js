@@ -509,3 +509,129 @@ test('updateLastActive', async (t) => {
   t.ok(userAfter.lastActiveAt, 'lastActiveAt is set after update')
   t.is(typeof userAfter.lastActiveAt, 'number', 'lastActiveAt is a number')
 })
+
+// ---------- JWT mode (conf.jwtSecret set) ----------
+
+const jwt = require('jsonwebtoken')
+const JWT_SECRET = 'test-secret-do-not-use-in-prod'
+
+const jwtSqliteFac = require('./helper/sqlite.fac')()
+const jwtLruFac = require('./helper/lru.fac')()
+const jwtAuthFac = new Fac(caller, {
+  sqlite: jwtSqliteFac,
+  ns: 'a0',
+  lru: jwtLruFac
+}, { env: 'test' })
+
+test('jwt: init with jwtSecret set', async (t) => {
+  await new Promise((resolve) => jwtAuthFac.start(resolve))
+  jwtAuthFac.conf.jwtSecret = JWT_SECRET
+  t.is(jwtAuthFac._isJwtMode, true, 'jwt mode active')
+})
+
+test('jwt: genToken returns HS256 JWT with expected claims', async (t) => {
+  const token = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 2,
+    roles: ['normal_user']
+  })
+
+  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'svc-facs-auth' })
+  t.is(decoded.sub, 2, 'sub claim is userId')
+  t.is(decoded.iss, 'svc-facs-auth', 'iss claim is default issuer')
+  t.alike(decoded.roles, ['normal_user'], 'roles claim matches')
+  t.alike(decoded.ips, ['127.0.0.1'], 'ips claim matches')
+  t.ok(decoded.jti, 'jti claim present')
+  t.ok(decoded.exp, 'exp claim present')
+  t.ok(decoded.iat, 'iat claim present')
+
+  t.exception(
+    () => jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'other' }),
+    /jwt issuer invalid/,
+    'rejects verification with mismatched issuer'
+  )
+})
+
+test('jwt: resolveToken accepts a valid token and rejects a tampered one', async (t) => {
+  const token = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 2,
+    roles: ['normal_user']
+  })
+
+  const res = await jwtAuthFac.resolveToken(token, ['127.0.0.1'])
+  t.ok(res, 'valid token resolves')
+  t.is(res.userId, 2, 'resolved shape has userId')
+
+  const [h, p, s] = token.split('.')
+  const tampered = `${h}.${p.slice(0, -1)}${p.slice(-1) === 'A' ? 'B' : 'A'}.${s}`
+  t.is(await jwtAuthFac.resolveToken(tampered, ['127.0.0.1']), null, 'tampered token rejected')
+})
+
+test('jwt: updateUser revokes prior tokens via the LRU denylist', async (t) => {
+  await jwtAuthFac.createUser({ email: 'jwt-user@localhost', roles: ['normal_user'] })
+  const user = await jwtAuthFac._sqlite.getAsync(
+    'SELECT * FROM users WHERE email = ?', 'jwt-user@localhost'
+  )
+
+  const tokens = []
+  for (let i = 0; i < 3; i++) {
+    tokens.push(await jwtAuthFac.genToken({
+      ips: ['127.0.0.1'],
+      userId: user.id,
+      roles: ['normal_user']
+    }))
+  }
+
+  await jwtAuthFac.updateUser({
+    token: tokens[0],
+    email: 'jwt-user2@localhost',
+    roles: ['normal_user']
+  })
+
+  for (const tk of tokens) {
+    t.is(await jwtAuthFac.resolveToken(tk, ['127.0.0.1']), null, 'revoked after update')
+  }
+})
+
+test('jwt: genToken tracks jti in LRU user-jtis entry; cleanupTokens is a no-op', async (t) => {
+  const a = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['*'],
+    ttl: 5
+  })
+  const b = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 1,
+    roles: ['*'],
+    ttl: 3000
+  })
+
+  const aJti = jwt.verify(a, JWT_SECRET, { issuer: 'svc-facs-auth' }).jti
+  const bJti = jwt.verify(b, JWT_SECRET, { issuer: 'svc-facs-auth' }).jti
+  const jtis = jwtAuthFac._lru.peek('user-jtis:1')
+  t.ok(jtis?.has(aJti), 'first jti tracked in LRU')
+  t.ok(jtis?.has(bJti), 'second jti tracked in LRU')
+
+  await t.execution(async () => await jwtAuthFac.cleanupTokens(), 'cleanupTokens no-ops in jwt mode')
+})
+
+test('jwt: _assertTtlCoveredByLru rejects ttl > lru.maxAge', (t) => {
+  const originalLru = jwtAuthFac._lru
+  const originalTtl = jwtAuthFac.conf.ttl
+
+  jwtAuthFac._lru = { cache: { maxAge: 60_000 } }
+  jwtAuthFac.conf.ttl = 120
+  t.exception(
+    () => jwtAuthFac._assertTtlCoveredByLru(),
+    /ERR_TTL_EXCEEDS_LRU_MAXAGE/,
+    'throws when conf.ttl exceeds lru.maxAge'
+  )
+
+  jwtAuthFac.conf.ttl = 60
+  t.execution(() => jwtAuthFac._assertTtlCoveredByLru(), 'boundary ttl === maxAge accepted')
+
+  jwtAuthFac._lru = originalLru
+  jwtAuthFac.conf.ttl = originalTtl
+})

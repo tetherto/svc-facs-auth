@@ -1,6 +1,6 @@
 {
   "name": "@tetherto/svc-facs-auth",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A facility that handles local authentication using sqlite db",
   "main": "index.js",
   "scripts": {
@@ -30,7 +30,8 @@
     "@bitfinex/bfx-facs-base": "^1.1.0",
     "@bitfinexcom/lib-js-util-base": "git+https://github.com/bitfinexcom/lib-js-util-base.git",
     "async": "3.2.5",
-    "bcrypt": "5.1.1"
+    "bcrypt": "5.1.1",
+    "jsonwebtoken": "9.0.3"
   },
   "devDependencies": {
     "@bitfinex/lib-js-util-promise": "git+https://github.com/bitfinexcom/lib-js-util-promise",

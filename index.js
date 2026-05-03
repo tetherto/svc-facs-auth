@@ -7,6 +7,7 @@ const { dateNowSec, extractIps, isValidIp, parseSql } = require('./lib/utils')
 const { isEqual, isNil, isPlainObject, getArrayUniq, union } = require('@bitfinexcom/lib-js-util-base')
 const crypto = require('crypto')
 const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
 
 class AuthFacility extends Base {
   constructor (caller, opts, ctx) {
@@ -22,6 +23,14 @@ class AuthFacility extends Base {
     this._hasConf = true
 
     super.init()
+  }
+
+  get _isJwtMode () {
+    return !!this.conf.jwtSecret
+  }
+
+  get _jwtIssuer () {
+    return this.conf.jwtIssuer || 'svc-facs-auth'
   }
 
   async _initDb () {
@@ -110,10 +119,23 @@ class AuthFacility extends Base {
   }
 
   async genToken ({ ips, userId, ttl = this.conf.ttl || 300, metadata = {}, pfx = 'pub', scope = 'api', roles = [] }) {
-    const now = dateNowSec()
-
     this._validateTokenOpts({ ips, userId, ttl, metadata, pfx, scope, roles })
+    const args = { ips: getArrayUniq(ips), userId, ttl, metadata, pfx, scope, roles }
+    return this._isJwtMode ? this._issueJwtToken(args) : this._issueDbToken(args)
+  }
 
+  _issueJwtToken ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
+    const jti = crypto.randomUUID()
+    const token = jwt.sign(
+      { sub: userId, roles, ips, metadata, pfx, scope, jti },
+      this.conf.jwtSecret,
+      { algorithm: 'HS256', expiresIn: ttl, issuer: this._jwtIssuer }
+    )
+    this._trackJti(userId, jti)
+    return token
+  }
+
+  async _issueDbToken ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
     let strRoles = ''
     if (roles.length) {
       strRoles = '-roles:' + roles.join(':')
@@ -122,32 +144,47 @@ class AuthFacility extends Base {
 
     await this._sqlite.runAsync(
       'INSERT INTO auth_tokens(token, userId, ips, metadata, created, ttl) VALUES (?, ?, ?, ?, ?, ?)',
-      [token, userId, JSON.stringify(getArrayUniq(ips)), JSON.stringify(metadata), now, ttl]
+      [token, userId, JSON.stringify(ips), JSON.stringify(metadata), dateNowSec(), ttl]
     )
 
     return token
   }
 
+  _trackJti (userId, jti) {
+    const key = `user-jtis:${userId}`
+    const jtis = this._lru.peek(key) || new Set()
+    jtis.add(jti)
+    this._lru.set(key, jtis)
+  }
+
   async regenerateToken ({ oldToken, ips = null, pfx = 'pub', scope = 'api', roles = [] }) {
-    const old = await this._getTokenFromDb(oldToken)
-    if (!old) {
-      throw new Error('ERR_OLD_TOKEN_INVALID')
+    let old
+    try {
+      old = await this._verifyToken(oldToken)
+    } catch (err) {
+      throw new Error('ERR_OLD_TOKEN_INVALID', { cause: err })
     }
 
     ips = ips || old.ips
     const userId = old.userId
+    const oldRoles = this._extractRoles(old, oldToken)
 
-    const oldRoles = []
-    const rolesMatch = oldToken.match(/(roles:[a-z_*:]*)/)
-    if (rolesMatch && rolesMatch[1]) {
-      oldRoles.push(...(rolesMatch[1].replace('roles:', '').split(':')))
-    }
     if (!roles.every(c => oldRoles.includes(c))) {
       throw new Error('ERR_ROLES_INVALID')
     }
 
     const newToken = await this.genToken({ ips, userId, ttl: this.conf.ttl || 300, metadata: old.metadata, pfx, scope, roles })
     return newToken
+  }
+
+  _extractRoles (verified, rawToken) {
+    if (this._isJwtMode) return verified.roles || []
+    const roles = []
+    const rolesMatch = rawToken.match(/(roles:[a-z_*:]*)/)
+    if (rolesMatch && rolesMatch[1]) {
+      roles.push(...(rolesMatch[1].replace('roles:', '').split(':')))
+    }
+    return roles
   }
 
   async createUser ({ email, name = null, roles = [], password = null }) {
@@ -175,13 +212,9 @@ class AuthFacility extends Base {
   }
 
   async updateUser ({ token, email, name = null, roles = [], password = null }) {
-    let user = await this._getTokenFromDb(token)
-    const userId = user?.userId
-    if (!userId) {
-      throw new Error('ERR_TOKEN_INVALID')
-    }
+    const { userId } = await this._verifyToken(token)
 
-    user = await this._sqlite.getAsync(
+    const user = await this._sqlite.getAsync(
       'SELECT * FROM users WHERE id = ? LIMIT 1', userId
     )
     if (!user) {
@@ -198,11 +231,7 @@ class AuthFacility extends Base {
   }
 
   async compareUser ({ token, email = null, name = null, roles = null, password = null }) {
-    const user = await this._getTokenFromDb(token)
-    const userId = user?.userId
-    if (!userId) {
-      throw new Error('ERR_TOKEN_INVALID')
-    }
+    const { userId } = await this._verifyToken(token)
 
     const dbUser = await this._sqlite.getAsync('SELECT * FROM users WHERE id = ? LIMIT 1', userId)
     if (!dbUser) {
@@ -238,29 +267,37 @@ class AuthFacility extends Base {
   }
 
   getTokenPerms (token) {
-    let roles = token.substring(token.indexOf('-roles:'))
-      .replace('-roles', '')
-      .split(':')
-      .filter(Boolean)
-
-    roles = roles.map(c => {
-      if (c === '*') {
-        return '*'
-      }
-      return this.conf.roles[c]
-    })
+    const roles = this._getRolesFromToken(token)
+    const rolePerms = roles.map(c => c === '*' ? '*' : this.conf.roles[c])
 
     return {
-      superadmin: roles.includes('*'),
-      perms: this._mergePerms(union(...roles))
+      superadmin: rolePerms.includes('*'),
+      perms: this._mergePerms(union(...rolePerms))
     }
   }
 
+  _getRolesFromToken (token) {
+    if (this._isJwtMode) {
+      try {
+        return this._verifyJwtToken(token).roles || []
+      } catch {
+        return []
+      }
+    }
+    return token.substring(token.indexOf('-roles:'))
+      .replace('-roles', '')
+      .split(':')
+      .filter(Boolean)
+  }
+
   async resolveToken (token, ips, opts = {}) {
-    const res = await this._getTokenFromDb(token)
-    if (!res || res.created + res.ttl < dateNowSec() || !ips.some(ip => res.ips.includes(ip))) {
+    let res
+    try {
+      res = await this._verifyToken(token)
+    } catch {
       return null
     }
+    if (!ips.some(ip => res.ips.includes(ip))) return null
 
     if (opts?.updateLastActive) await this.updateLastActive(res.userId)
 
@@ -281,6 +318,47 @@ class AuthFacility extends Base {
     const [key, required] = perm.split(':')
     const av = perms.find(p => p.startsWith(`${key}:`))?.split(':')[1] ?? ''
     return [...required].every(c => av.includes(c))
+  }
+
+  async _verifyToken (token) {
+    if (this._isJwtMode) return this._verifyJwtToken(token)
+    return this._verifyDbToken(token)
+  }
+
+  _verifyJwtToken (token) {
+    if (typeof token !== 'string') {
+      throw new Error('ERR_TOKEN_INVALID', { cause: new Error('token is not a string') })
+    }
+    let decoded
+    try {
+      decoded = jwt.verify(token, this.conf.jwtSecret, {
+        algorithms: ['HS256'],
+        issuer: this._jwtIssuer
+      })
+    } catch (err) {
+      throw new Error('ERR_TOKEN_INVALID', { cause: err })
+    }
+    if (this._lru.get(`denylist:${decoded.jti}`)) {
+      throw new Error('ERR_TOKEN_INVALID', { cause: new Error('jti denylisted') })
+    }
+    return {
+      userId: decoded.sub,
+      ips: decoded.ips,
+      metadata: decoded.metadata,
+      roles: decoded.roles,
+      jti: decoded.jti
+    }
+  }
+
+  async _verifyDbToken (token) {
+    const res = await this._getTokenFromDb(token)
+    if (!res) {
+      throw new Error('ERR_TOKEN_INVALID', { cause: new Error('token not found') })
+    }
+    if (res.created + res.ttl < dateNowSec()) {
+      throw new Error('ERR_TOKEN_INVALID', { cause: new Error('token expired') })
+    }
+    return res
   }
 
   async _getTokenFromDb (token) {
@@ -307,6 +385,7 @@ class AuthFacility extends Base {
   }
 
   async cleanupTokens () {
+    if (this._isJwtMode) return
     await this._sqlite.runAsync(
       'DELETE FROM auth_tokens WHERE created + ttl < ?',
       dateNowSec()
@@ -387,6 +466,7 @@ class AuthFacility extends Base {
 
     if (info.password) delete info.password
     const metadata = { ...info, ...user }
+    if (this._isJwtMode) delete metadata.password
     const ips = extractIps(req)
 
     const roles = []
@@ -444,15 +524,40 @@ class AuthFacility extends Base {
   }
 
   async _deleteTokensOfUser (id) {
+    if (this._isJwtMode) return this._revokeJwtUserTokens(id)
+    return this._revokeDbUserTokens(id)
+  }
+
+  _revokeJwtUserTokens (userId) {
+    const key = `user-jtis:${userId}`
+    const jtis = this._lru.peek(key)
+    if (!jtis) return
+    for (const jti of jtis) {
+      this._lru.set(`denylist:${jti}`, true)
+    }
+    this._lru.remove(key)
+  }
+
+  async _revokeDbUserTokens (userId) {
     const tokens = await this._sqlite.allAsync(
-      'SELECT * from auth_tokens WHERE userId=?', [id]
+      'SELECT * from auth_tokens WHERE userId=?', [userId]
     )
 
     tokens.forEach(({ token }) => this._lru.remove(`gotokens:${token}`))
 
     await this._sqlite.allAsync(
-      'DELETE from auth_tokens WHERE userId=?', [id]
+      'DELETE from auth_tokens WHERE userId=?', [userId]
     )
+  }
+
+  _assertTtlCoveredByLru () {
+    if (!this._isJwtMode) return
+    const lruMaxAgeMs = this._lru?.cache?.maxAge
+    if (!lruMaxAgeMs) return
+    const ttlSec = this.conf.ttl || 300
+    if (ttlSec * 1000 > lruMaxAgeMs) {
+      throw new Error(`ERR_TTL_EXCEEDS_LRU_MAXAGE: conf.ttl=${ttlSec}s exceeds lru.maxAge=${lruMaxAgeMs / 1000}s`)
+    }
   }
 
   async _start (cb) {
@@ -460,6 +565,7 @@ class AuthFacility extends Base {
       next => { super._start(next) },
       async () => {
         await this._initDb()
+        this._assertTtlCoveredByLru()
       }
     ], cb)
   }
