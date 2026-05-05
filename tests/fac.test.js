@@ -536,20 +536,39 @@ test('jwt: genToken returns HS256 JWT with expected claims', async (t) => {
     roles: ['normal_user']
   })
 
-  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'svc-facs-auth' })
+  const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] })
   t.is(decoded.sub, 2, 'sub claim is userId')
-  t.is(decoded.iss, 'svc-facs-auth', 'iss claim is default issuer')
+  t.is(decoded.iss, undefined, 'iss claim absent when jwtIssuer not configured')
   t.alike(decoded.roles, ['normal_user'], 'roles claim matches')
-  t.alike(decoded.ips, ['127.0.0.1'], 'ips claim matches')
+  t.is(decoded.ips, undefined, 'ips not embedded in JWT (kept server-side)')
+  t.is(decoded.metadata, undefined, 'metadata not embedded in JWT (kept server-side)')
   t.ok(decoded.jti, 'jti claim present')
   t.ok(decoded.exp, 'exp claim present')
   t.ok(decoded.iat, 'iat claim present')
+})
 
-  t.exception(
-    () => jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'other' }),
-    /jwt issuer invalid/,
-    'rejects verification with mismatched issuer'
-  )
+test('jwt: issuer is opt-in via conf.jwtIssuer', async (t) => {
+  jwtAuthFac.conf.jwtIssuer = 'my-app'
+  try {
+    const token = await jwtAuthFac.genToken({
+      ips: ['127.0.0.1'],
+      userId: 2,
+      roles: ['normal_user']
+    })
+
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'my-app' })
+    t.is(decoded.iss, 'my-app', 'iss claim set when configured')
+
+    t.exception(
+      () => jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'other' }),
+      /jwt issuer invalid/,
+      'rejects verification with mismatched issuer'
+    )
+
+    t.ok(await jwtAuthFac.resolveToken(token, ['127.0.0.1']), 'fac resolves matching issuer')
+  } finally {
+    delete jwtAuthFac.conf.jwtIssuer
+  }
 })
 
 test('jwt: resolveToken accepts a valid token and rejects a tampered one', async (t) => {
@@ -568,7 +587,7 @@ test('jwt: resolveToken accepts a valid token and rejects a tampered one', async
   t.is(await jwtAuthFac.resolveToken(tampered, ['127.0.0.1']), null, 'tampered token rejected')
 })
 
-test('jwt: updateUser revokes prior tokens via the LRU denylist', async (t) => {
+test('jwt: updateUser revokes prior tokens', async (t) => {
   await jwtAuthFac.createUser({ email: 'jwt-user@localhost', roles: ['normal_user'] })
   const user = await jwtAuthFac._sqlite.getAsync(
     'SELECT * FROM users WHERE email = ?', 'jwt-user@localhost'
@@ -608,8 +627,8 @@ test('jwt: genToken tracks jti in LRU user-jtis entry; cleanupTokens is a no-op'
     ttl: 3000
   })
 
-  const aJti = jwt.verify(a, JWT_SECRET, { issuer: 'svc-facs-auth' }).jti
-  const bJti = jwt.verify(b, JWT_SECRET, { issuer: 'svc-facs-auth' }).jti
+  const aJti = jwt.verify(a, JWT_SECRET).jti
+  const bJti = jwt.verify(b, JWT_SECRET).jti
   const jtis = jwtAuthFac._lru.peek('user-jtis:1')
   t.ok(jtis?.has(aJti), 'first jti tracked in LRU')
   t.ok(jtis?.has(bJti), 'second jti tracked in LRU')

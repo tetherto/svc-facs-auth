@@ -9,6 +9,8 @@ const crypto = require('crypto')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 
+const JWT_ALGORITHM = 'HS256'
+
 class AuthFacility extends Base {
   constructor (caller, opts, ctx) {
     super(caller, opts, ctx)
@@ -27,10 +29,6 @@ class AuthFacility extends Base {
 
   get _isJwtMode () {
     return !!this.conf.jwtSecret
-  }
-
-  get _jwtIssuer () {
-    return this.conf.jwtIssuer || 'svc-facs-auth'
   }
 
   async _initDb () {
@@ -126,11 +124,14 @@ class AuthFacility extends Base {
 
   _issueJwtToken ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
     const jti = crypto.randomUUID()
+    const signOpts = { algorithm: JWT_ALGORITHM, expiresIn: ttl }
+    if (this.conf.jwtIssuer) signOpts.issuer = this.conf.jwtIssuer
     const token = jwt.sign(
-      { sub: userId, roles, ips, metadata, pfx, scope, jti },
+      { sub: userId, roles, pfx, scope, jti },
       this.conf.jwtSecret,
-      { algorithm: 'HS256', expiresIn: ttl, issuer: this._jwtIssuer }
+      signOpts
     )
+    this._lru.set(`jti-data:${jti}`, { ips, metadata })
     this._trackJti(userId, jti)
     return token
   }
@@ -331,20 +332,20 @@ class AuthFacility extends Base {
     }
     let decoded
     try {
-      decoded = jwt.verify(token, this.conf.jwtSecret, {
-        algorithms: ['HS256'],
-        issuer: this._jwtIssuer
-      })
+      const verifyOpts = { algorithms: [JWT_ALGORITHM] }
+      if (this.conf.jwtIssuer) verifyOpts.issuer = this.conf.jwtIssuer
+      decoded = jwt.verify(token, this.conf.jwtSecret, verifyOpts)
     } catch (err) {
       throw new Error('ERR_TOKEN_INVALID', { cause: err })
     }
-    if (this._lru.get(`denylist:${decoded.jti}`)) {
-      throw new Error('ERR_TOKEN_INVALID', { cause: new Error('jti denylisted') })
+    const data = this._lru.get(`jti-data:${decoded.jti}`)
+    if (!data) {
+      throw new Error('ERR_TOKEN_INVALID', { cause: new Error('jti data missing (revoked or evicted)') })
     }
     return {
       userId: decoded.sub,
-      ips: decoded.ips,
-      metadata: decoded.metadata,
+      ips: data.ips,
+      metadata: data.metadata,
       roles: decoded.roles,
       jti: decoded.jti
     }
@@ -533,7 +534,7 @@ class AuthFacility extends Base {
     const jtis = this._lru.peek(key)
     if (!jtis) return
     for (const jti of jtis) {
-      this._lru.set(`denylist:${jti}`, true)
+      this._lru.remove(`jti-data:${jti}`)
     }
     this._lru.remove(key)
   }

@@ -1,6 +1,6 @@
 {
   "name": "@tetherto/svc-facs-auth",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "description": "A facility that handles local authentication using sqlite db",
   "main": "index.js",
   "scripts": {
