@@ -11,6 +11,12 @@ const jwt = require('jsonwebtoken')
 
 const JWT_ALGORITHM = 'HS256'
 
+const lruKeys = {
+  userJtis: (userId) => `user-jtis:${userId}`,
+  jtiData: (jti) => `jti-data:${jti}`,
+  goTokens: (token) => `gotokens:${token}`
+}
+
 class AuthFacility extends Base {
   constructor (caller, opts, ctx) {
     super(caller, opts, ctx)
@@ -124,16 +130,19 @@ class AuthFacility extends Base {
 
   _issueJwtToken ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
     const jti = crypto.randomUUID()
-    const signOpts = { algorithm: JWT_ALGORITHM, expiresIn: ttl }
-    if (this.conf.jwtIssuer) signOpts.issuer = this.conf.jwtIssuer
+    const signOpts = { algorithm: JWT_ALGORITHM, expiresIn: ttl, ...this._jwtIssuerOpts() }
     const token = jwt.sign(
       { sub: userId, roles, pfx, scope, jti },
       this.conf.jwtSecret,
       signOpts
     )
-    this._lru.set(`jti-data:${jti}`, { ips, metadata })
+    this._lru.set(lruKeys.jtiData(jti), { ips, metadata })
     this._trackJti(userId, jti)
     return token
+  }
+
+  _jwtIssuerOpts () {
+    return this.conf.jwtIssuer ? { issuer: this.conf.jwtIssuer } : {}
   }
 
   async _issueDbToken ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
@@ -151,11 +160,14 @@ class AuthFacility extends Base {
     return token
   }
 
+  _getUserJtis (userId) {
+    return this._lru.peek(lruKeys.userJtis(userId))
+  }
+
   _trackJti (userId, jti) {
-    const key = `user-jtis:${userId}`
-    const jtis = this._lru.peek(key) || new Set()
+    const jtis = this._getUserJtis(userId) || new Set()
     jtis.add(jti)
-    this._lru.set(key, jtis)
+    this._lru.set(lruKeys.userJtis(userId), jtis)
   }
 
   async regenerateToken ({ oldToken, ips = null, pfx = 'pub', scope = 'api', roles = [] }) {
@@ -335,13 +347,12 @@ class AuthFacility extends Base {
     }
     let decoded
     try {
-      const verifyOpts = { algorithms: [JWT_ALGORITHM] }
-      if (this.conf.jwtIssuer) verifyOpts.issuer = this.conf.jwtIssuer
+      const verifyOpts = { algorithms: [JWT_ALGORITHM], ...this._jwtIssuerOpts() }
       decoded = jwt.verify(token, this.conf.jwtSecret, verifyOpts)
     } catch (err) {
       throw new Error('ERR_TOKEN_INVALID', { cause: err })
     }
-    const data = this._lru.get(`jti-data:${decoded.jti}`)
+    const data = this._lru.get(lruKeys.jtiData(decoded.jti))
     if (!data) {
       throw new Error('ERR_TOKEN_INVALID', { cause: new Error('jti data missing (revoked or evicted)') })
     }
@@ -370,7 +381,7 @@ class AuthFacility extends Base {
       return null
     }
 
-    const ckey = `gotokens:${token}`
+    const ckey = lruKeys.goTokens(token)
     let res = this._lru.get(ckey)
 
     if (!res) {
@@ -533,23 +544,21 @@ class AuthFacility extends Base {
   }
 
   _revokeJwtUserTokens (userId) {
-    const key = `user-jtis:${userId}`
-    const jtis = this._lru.peek(key)
+    const jtis = this._getUserJtis(userId)
     if (!jtis) return
     for (const jti of jtis) {
-      this._lru.remove(`jti-data:${jti}`)
+      this._lru.remove(lruKeys.jtiData(jti))
     }
-    this._lru.remove(key)
+    this._lru.remove(lruKeys.userJtis(userId))
   }
 
   _revokeJwtToken (userId, jti) {
-    this._lru.remove(`jti-data:${jti}`)
-    const key = `user-jtis:${userId}`
-    const jtis = this._lru.peek(key)
+    this._lru.remove(lruKeys.jtiData(jti))
+    const jtis = this._getUserJtis(userId)
     if (!jtis) return
     jtis.delete(jti)
-    if (jtis.size === 0) this._lru.remove(key)
-    else this._lru.set(key, jtis)
+    if (jtis.size === 0) this._lru.remove(lruKeys.userJtis(userId))
+    else this._lru.set(lruKeys.userJtis(userId), jtis)
   }
 
   async _revokeDbUserTokens (userId) {
@@ -557,7 +566,7 @@ class AuthFacility extends Base {
       'SELECT * from auth_tokens WHERE userId=?', [userId]
     )
 
-    tokens.forEach(({ token }) => this._lru.remove(`gotokens:${token}`))
+    tokens.forEach(({ token }) => this._lru.remove(lruKeys.goTokens(token)))
 
     await this._sqlite.allAsync(
       'DELETE from auth_tokens WHERE userId=?', [userId]
