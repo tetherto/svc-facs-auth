@@ -613,6 +613,26 @@ test('jwt: updateUser revokes prior tokens', async (t) => {
   }
 })
 
+test('jwt: regenerateToken revokes the old jti', async (t) => {
+  const oldToken = await jwtAuthFac.genToken({
+    ips: ['127.0.0.1'],
+    userId: 42,
+    roles: ['user']
+  })
+  const oldJti = jwt.verify(oldToken, JWT_SECRET).jti
+
+  const newToken = await jwtAuthFac.regenerateToken({ oldToken, roles: ['user'] })
+  const newJti = jwt.verify(newToken, JWT_SECRET).jti
+
+  t.not(newJti, oldJti, 'new token has a different jti')
+  t.is(await jwtAuthFac.resolveToken(oldToken, ['127.0.0.1']), null, 'old token rejected after regenerate')
+  t.ok(await jwtAuthFac.resolveToken(newToken, ['127.0.0.1']), 'new token still valid')
+
+  const jtis = jwtAuthFac._lru.peek('user-jtis:42')
+  t.absent(jtis?.has(oldJti), 'old jti removed from user-jtis set')
+  t.ok(jtis?.has(newJti), 'new jti present in user-jtis set')
+})
+
 test('jwt: genToken tracks jti in LRU user-jtis entry; cleanupTokens is a no-op', async (t) => {
   const a = await jwtAuthFac.genToken({
     ips: ['127.0.0.1'],

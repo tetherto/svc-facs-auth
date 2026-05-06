@@ -175,6 +175,9 @@ class AuthFacility extends Base {
     }
 
     const newToken = await this.genToken({ ips, userId, ttl: this.conf.ttl || 300, metadata: old.metadata, pfx, scope, roles })
+
+    if (this._isJwtMode) this._revokeJwtToken(userId, old.jti)
+
     return newToken
   }
 
@@ -466,8 +469,8 @@ class AuthFacility extends Base {
     const userId = user.id
 
     if (info.password) delete info.password
+    if (user.password) delete user.password
     const metadata = { ...info, ...user }
-    if (this._isJwtMode) delete metadata.password
     const ips = extractIps(req)
 
     const roles = []
@@ -537,6 +540,16 @@ class AuthFacility extends Base {
       this._lru.remove(`jti-data:${jti}`)
     }
     this._lru.remove(key)
+  }
+
+  _revokeJwtToken (userId, jti) {
+    this._lru.remove(`jti-data:${jti}`)
+    const key = `user-jtis:${userId}`
+    const jtis = this._lru.peek(key)
+    if (!jtis) return
+    jtis.delete(jti)
+    if (jtis.size === 0) this._lru.remove(key)
+    else this._lru.set(key, jtis)
   }
 
   async _revokeDbUserTokens (userId) {
