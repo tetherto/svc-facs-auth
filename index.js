@@ -79,6 +79,18 @@ class AuthFacility extends Base {
     Object.assign(this._mfaHandlers, handlers)
   }
 
+  _validateRoles (roles) {
+    if (!Array.isArray(roles)) {
+      throw new Error('ERR_ROLES_INVALID')
+    }
+    const allowed = Object.keys(this.conf.roles || {})
+    for (const role of roles) {
+      if (typeof role !== 'string' || !allowed.includes(role)) {
+        throw new Error('ERR_ROLES_INVALID')
+      }
+    }
+  }
+
   _validateTokenOpts ({ ips, userId, ttl, metadata, pfx, scope, roles }) {
     if (!Array.isArray(ips) || !ips.length || !ips.every(ip => isValidIp(ip))) {
       throw new Error('ERR_IPS_INVALID')
@@ -159,6 +171,8 @@ class AuthFacility extends Base {
       throw new Error('ERR_MISSING_ROLES')
     }
 
+    this._validateRoles(roles)
+
     const user = await this._sqlite.getAsync(
       'SELECT * FROM users WHERE email = ? LIMIT 1', email
     )
@@ -186,6 +200,15 @@ class AuthFacility extends Base {
     )
     if (!user) {
       throw new Error('ERR_USER_NOT_FOUND')
+    }
+
+    const currentRoles = JSON.parse(user.roles || '[]')
+    const rolesChanging = !isEqual([...currentRoles].sort(), [...roles].sort())
+    if (rolesChanging) {
+      this._validateRoles(roles)
+      if (!this.tokenHasPerms(token, 'user:rw')) {
+        throw new Error('ERR_INSUFFICIENT_PERMS')
+      }
     }
 
     password = password ? await bcrypt.hash(password, this.conf.saltRounds || 10) : null
@@ -284,7 +307,7 @@ class AuthFacility extends Base {
   }
 
   async _getTokenFromDb (token) {
-    if (typeof token !== 'string' || /^[a-zA-Z0-9:\-]$/.test(token)) { //eslint-disable-line
+    if (typeof token !== 'string' || !/^pub:api:[a-f0-9-]{36}-\d+(?:-roles:[a-z_*:]+)?$/.test(token)) {
       return null
     }
 
@@ -387,7 +410,7 @@ class AuthFacility extends Base {
 
     if (info.password) delete info.password
     const metadata = { ...info, ...user }
-    const ips = extractIps(req)
+    const ips = extractIps(req, { trustProxy: !!this.conf.trustProxy })
 
     const roles = []
     if (metadata.roles?.length) {

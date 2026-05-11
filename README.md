@@ -12,6 +12,7 @@ This facility requires a config file in the following structure:
     "superAdmin": "superadmin@localhost", // Superadmin email address
     "ttl": 5000, // Default token time-to-live in seconds
     "saltRounds": 10, // Number of salt rounds for password hashing
+    "trustProxy": false, // See "Client IP resolution" below
     "roles": { // Roles with associated permissions
       "admin": [
         "miner:rw",
@@ -28,6 +29,27 @@ This facility requires a config file in the following structure:
   }
 }
 ```
+
+### Client IP resolution
+
+Tokens are bound to the IPs observed at issue time. By default the facility
+trusts only the direct socket peer (`req.socket.remoteAddress`) and ignores
+the spoofable `X-Forwarded-For` header — so callers behind a proxy will see
+their token bound to the proxy's address.
+
+If your service runs behind a trusted reverse proxy, set `trustProxy: true`
+**and** configure your HTTP framework to validate the proxy chain itself
+(e.g. Express's `app.set('trust proxy', …)`). When enabled, the facility
+additionally trusts the framework-derived `req.ip` / `req.ips`. The raw
+`X-Forwarded-For` header is never consumed directly.
+
+### Roles
+
+`createUser` and `updateUser` only accept role names declared as keys in
+`conf.roles`. The super-admin marker (`*`) cannot be assigned via these
+APIs — it is reserved for the bootstrap super-admin written by `_initDb`.
+`updateUser` additionally requires the caller's token to hold `user:rw`
+whenever the requested roles differ from the user's current roles.
 
 ## Documentation
 ### `auth.createUser(req)`
