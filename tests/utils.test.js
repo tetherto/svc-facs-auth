@@ -34,6 +34,28 @@ test('utils', async (t) => {
       /ERR_IP_RESOLVE_FAIL/,
       'still ignores raw x-forwarded-for header when trustProxy'
     )
+
+    // Test Cloudflare CF-Connecting-IP header support
+    t.alike(
+      extractIps({ headers: { 'cf-connecting-ip': '4.4.4.4' }, socket: { remoteAddress: '5.5.5.5' } }, { trustProxy: true }),
+      ['4.4.4.4', '5.5.5.5'],
+      'reads cf-connecting-ip header when trustProxy is enabled'
+    )
+    t.exception(
+      () => extractIps({ headers: { 'cf-connecting-ip': '4.4.4.4' } }, { trustProxy: false }),
+      /ERR_IP_RESOLVE_FAIL/,
+      'ignores cf-connecting-ip header when trustProxy is disabled'
+    )
+    t.alike(
+      extractIps({ headers: { 'cf-connecting-ip': '4.4.4.4' }, ip: '1.1.1.1', socket: { remoteAddress: '5.5.5.5' } }, { trustProxy: true }),
+      ['4.4.4.4', '1.1.1.1', '5.5.5.5'],
+      'includes cf-connecting-ip along with req.ip and socket.remoteAddress'
+    )
+    t.alike(
+      extractIps({ headers: { 'cf-connecting-ip': 'invalid-ip' }, ip: '1.1.1.1' }, { trustProxy: true }),
+      ['1.1.1.1'],
+      'ignores invalid cf-connecting-ip value'
+    )
   })
 
   t.test('isValidIp', async (t) => {

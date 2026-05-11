@@ -39,9 +39,12 @@ their token bound to the proxy's address.
 
 If your service runs behind a trusted reverse proxy, set `trustProxy: true`
 **and** configure your HTTP framework to validate the proxy chain itself
-(e.g. Express's `app.set('trust proxy', …)`). When enabled, the facility
-additionally trusts the framework-derived `req.ip` / `req.ips`. The raw
-`X-Forwarded-For` header is never consumed directly.
+(e.g. Express's `app.set('trust proxy', …)`). When enabled, the facility:
+- Checks for Cloudflare's `CF-Connecting-IP` header (if present and valid)
+- Trusts the framework-derived `req.ip` / `req.ips` (from `X-Forwarded-For`)
+- Always includes `req.socket.remoteAddress` as a fallback
+
+The raw `X-Forwarded-For` header is never consumed directly for security reasons.
 
 ### Roles
 
