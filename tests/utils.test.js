@@ -13,11 +13,49 @@ test('utils', async (t) => {
   })
 
   t.test('extractIps', async (t) => {
-    t.alike(extractIps({ headers: { 'x-forwarded-for': '127.0.0.1' } }), ['127.0.0.1'], 'reads IP from x-forwarded-for')
-    t.alike(extractIps({ ip: '1.1.1.1' }), ['1.1.1.1'], 'reads IP from req.ip')
-    t.alike(extractIps({ ips: ['1.1.1.1', '2.2.2.2'] }), ['1.1.1.1', '2.2.2.2'], 'reads IP from req.ips')
+    // Default: only socket.remoteAddress is trusted; spoofable header / framework
+    // values are ignored unless trustProxy is explicitly enabled.
+    t.exception(() => extractIps({ headers: { 'x-forwarded-for': '127.0.0.1' } }), /ERR_IP_RESOLVE_FAIL/, 'ignores x-forwarded-for by default')
+    t.exception(() => extractIps({ ip: '1.1.1.1' }), /ERR_IP_RESOLVE_FAIL/, 'ignores req.ip by default')
+    t.exception(() => extractIps({ ips: ['1.1.1.1', '2.2.2.2'] }), /ERR_IP_RESOLVE_FAIL/, 'ignores req.ips by default')
     t.alike(extractIps({ socket: { remoteAddress: '3.3.3.3' } }), ['3.3.3.3'], 'reads IP from req.socket.remoteAddress')
-    t.exception(() => extractIps({}), 'ERR_IP_RESOLVE_FAIL', 'throws if no IP found')
+    t.exception(() => extractIps({}), /ERR_IP_RESOLVE_FAIL/, 'throws if no IP found')
+
+    // With trustProxy: framework-derived values are honoured, raw header is still ignored.
+    t.alike(extractIps({ ip: '1.1.1.1' }, { trustProxy: true }), ['1.1.1.1'], 'reads req.ip when trustProxy')
+    t.alike(extractIps({ ips: ['1.1.1.1', '2.2.2.2'] }, { trustProxy: true }), ['1.1.1.1', '2.2.2.2'], 'reads req.ips when trustProxy')
+    t.alike(
+      extractIps({ ip: '1.1.1.1', socket: { remoteAddress: '3.3.3.3' } }, { trustProxy: true }),
+      ['1.1.1.1', '3.3.3.3'],
+      'unions req.ip with socket.remoteAddress when trustProxy'
+    )
+    t.exception(
+      () => extractIps({ headers: { 'x-forwarded-for': '127.0.0.1' } }, { trustProxy: true }),
+      /ERR_IP_RESOLVE_FAIL/,
+      'still ignores raw x-forwarded-for header when trustProxy'
+    )
+
+    // Test Cloudflare CF-Connecting-IP header support
+    t.alike(
+      extractIps({ headers: { 'cf-connecting-ip': '4.4.4.4' }, socket: { remoteAddress: '5.5.5.5' } }, { trustProxy: true }),
+      ['4.4.4.4', '5.5.5.5'],
+      'reads cf-connecting-ip header when trustProxy is enabled'
+    )
+    t.exception(
+      () => extractIps({ headers: { 'cf-connecting-ip': '4.4.4.4' } }, { trustProxy: false }),
+      /ERR_IP_RESOLVE_FAIL/,
+      'ignores cf-connecting-ip header when trustProxy is disabled'
+    )
+    t.alike(
+      extractIps({ headers: { 'cf-connecting-ip': '4.4.4.4' }, ip: '1.1.1.1', socket: { remoteAddress: '5.5.5.5' } }, { trustProxy: true }),
+      ['4.4.4.4', '1.1.1.1', '5.5.5.5'],
+      'includes cf-connecting-ip along with req.ip and socket.remoteAddress'
+    )
+    t.alike(
+      extractIps({ headers: { 'cf-connecting-ip': 'invalid-ip' }, ip: '1.1.1.1' }, { trustProxy: true }),
+      ['1.1.1.1'],
+      'ignores invalid cf-connecting-ip value'
+    )
   })
 
   t.test('isValidIp', async (t) => {
