@@ -2,7 +2,7 @@
 
 const test = require('brittle')
 const { promiseSleep } = require('@bitfinex/lib-js-util-promise')
-const { omit } = require('@bitfinexcom/lib-js-util-base')
+const { omit } = require('@bitfinex/lib-js-util-base')
 const async = require('async')
 
 const Fac = require('..')
